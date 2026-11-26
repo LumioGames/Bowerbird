@@ -227,6 +227,9 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
   let completionTimer: NodeJS.Timeout | null = null
   const completedRecently: string[] = []
   function announceCompletion(id: string): void {
+    // A stage that ends while stop() waits for running work is not announced: the index closes right after stop(),
+    // before the timer would fire.
+    if (stopped) return
     completedRecently.push(id)
     if (completedRecently.length > 16) completedRecently.shift()
     if (completionTimer) return

@@ -196,6 +196,35 @@ describe('pipeline stages', () => {
     expect(seen.at(-1)).toMatchObject({ busy: 0 })
   })
 
+  it('a stage that finishes while stop() waits for it leaves no completion timer to touch the closed index', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    let probing!: () => void
+    const probeStarted = new Promise<void>(r => { probing = r })
+    const db = openMemoryIndexDb()
+    const plugins = pluginsWith([imageFormat({ probe: async () => { probing(); await gate; return { tech: {} } } })])
+    // not a rig: afterEach would read the index this test closes
+    const pipe = createPipelineImpl({ db, library: fakeHandle(tmp()), plugins, query: createQueryEngine({ db, plugins, thumbnailUrl: () => null, log: silentLogger }), deps: new FakeDeps(db), events: createEventBus(), log: silentLogger, cleanIntervalMs: 0, completionEventMs: 20 })
+    const id = seedAsset(db, { path: 'late.png' })
+    const uncaught: unknown[] = []
+    const onUncaught = (e: unknown): void => { uncaught.push(e) }
+    process.on('uncaughtException', onUncaught)
+    try {
+      pipe.start()
+      pipe.enqueue(id, ['probe'])
+      await probeStarted
+      const stopping = pipe.stop()
+      release() // the stage completes during stop()'s wait for running work
+      await stopping
+      expect(jobsOf(db, id).probe).toBe('done')
+      db.close() // what LibraryService.close() does right after pipeline.stop()
+      await new Promise(r => setTimeout(r, 100))
+    } finally {
+      process.off('uncaughtException', onUncaught)
+    }
+    expect(uncaught.map(e => (e instanceof Error ? e.message : String(e)))).toEqual([])
+  })
+
   it('respects concurrency and runs one stage of an asset at a time', async () => {
     let active = 0
     let peak = 0

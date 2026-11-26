@@ -50,6 +50,7 @@ export interface PipelineImpl extends Pipeline {
   summaryImage(assetId: Guid): { variant: ThumbVariant; path: string } | null
   /** Run a plugin action on a selection as an `action` job (K11; plugin-system.md「动作」). */
   startAction(actionId: string, req: { ids: Guid[]; params?: unknown }, ctx: CallContext): Promise<JobInfo>
+  yieldToScan(on: boolean): void
 }
 
 /** Optional LibraryHandle extension: the library module's writer for cache files inside the library (P2-13). */
@@ -156,6 +157,12 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
   let started = false
   let stopped = false
   let pumpScheduled = false
+  /**
+   * A full scan of the library is running (yieldToScan): the backlog waits, so the scan does not share the event loop,
+   * the thread pool and the write lock with a whole library's worth of processing; what a browser shows still runs,
+   * one job at a time (pipeline-and-cache.md「扫描时让路」).
+   */
+  let scanYield = false
   let wakeTimer: NodeJS.Timeout | null = null
   let cleanTimer: NodeJS.Timeout | null = null
   let offScan: (() => void) | null = null
@@ -329,11 +336,12 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
     if (!started || stopped) return
     flush(FLUSH_CHUNK)
     if (pending.length) schedulePump()
-    const free = concurrencyNow() - running.size
+    const free = (scanYield ? 1 : concurrencyNow()) - running.size
     if (free > 0) {
       const rows = pickStmt.all(Date.now(), JSON.stringify([...busyAssets]), free) as JobRow[]
       for (const job of rows) {
         if (busyAssets.has(job.asset_id!)) continue
+        if (scanYield && job.priority < PRIORITY.visible) continue
         busyAssets.add(job.asset_id!)
         update(job.id, { status: 'running' })
         const p = runProcess(job)
@@ -1111,6 +1119,12 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
       if (keep.length !== pending.length) { const all = takePending(pending.length); addPending(all.filter(it => it.id !== id)) }
       forgetNow(id)
       processing.delete(id)
+    },
+
+    yieldToScan(on) {
+      if (scanYield === on) return
+      scanYield = on
+      if (!on) schedulePump()
     },
 
     markVisible(ids) {

@@ -266,6 +266,11 @@ export interface Pipeline {
   forget(id: Guid): void
   /** Assets visible in some browser right now: raise their priority (pipeline-and-cache.md「优先级」). */
   markVisible(ids: Guid[]): void
+  /**
+   * A full scan starts (true) or ends (false): meanwhile only jobs of visible assets run, one at a time, and the
+   * backlog waits (pipeline-and-cache.md「扫描时让路」).
+   */
+  yieldToScan?(on: boolean): void
   overview(): JobsResponse
   job(id: string): JobInfo | null
   cancel(id: string): void

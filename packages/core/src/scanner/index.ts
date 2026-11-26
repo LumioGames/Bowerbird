@@ -10,8 +10,11 @@ import {
   FOLDER_META_NAME, IGNORE_FILE, LIBRARY_DIR, SCANNER_ACTOR, SIDECAR_SUFFIX, dirOf, joinPath, serializeBmeta,
   type Bmeta, type Guid, type ScanProgress
 } from '@bowerbird/schema'
-/** What a scan keeps per sidecar. */
-type SideInfo = { ok: true; id: Guid } | { ok: false; error: string }
+/**
+ * What a scan keeps per sidecar. `same`: the sidecar was still the one the index holds (same mtime and the exact size
+ * of what we would write) — the stat seen then, so reconciliation can skip reading it again if it has not moved since.
+ */
+type SideInfo = { ok: true; id: Guid; same?: { mtimeMs: number; size: number } } | { ok: false; error: string }
 import { canonicalMetaJson, parkedPath, PARKED_PREFIX, type AssetRow } from '../index/store.js'
 import { IDENTITY_FIELD, issueId, type IdentityNote } from '../integrity/index.js'
 import { isUnder, relOf } from '../library/paths.js'
@@ -35,6 +38,11 @@ export interface ScannerOptions {
   beforeFull?: () => Promise<void>
   /** Hook run after a full scan (plugin-missing, trash expiry). */
   afterFull?: () => Promise<void>
+  /**
+   * A full scan starts working (true) and stops (false) — not while it only waits to look again at files still being
+   * written. The pipeline yields meanwhile (pipeline-and-cache.md「扫描时让路」).
+   */
+  onFullBusy?: (busy: boolean) => void
   /**
    * Whether the folder is really there (an unmounted NAS must not turn every asset into「文件缺失」).
    * A scan is skipped when this says no.
@@ -238,6 +246,7 @@ export class Scanner {
     // still running = this pass continues a scan that was waiting for its retry: same start
     const startedAt = this.progress.running && this.progress.startedAt ? this.progress.startedAt : nowIso()
     this.setProgress({ running: true, phase: 'walking', done: 0, total: 0, startedAt, finishedAt: undefined, current: undefined }, true)
+    if (full) this.o.onFullBusy?.(true)
     try {
       if (full && this.o.beforeFull) await this.o.beforeFull()
 
@@ -286,6 +295,8 @@ export class Scanner {
       core.log.error('scan failed', { error: String((e as Error)?.stack ?? e) })
       this.finish('done')
       throw e
+    } finally {
+      if (full) this.o.onFullBusy?.(false)
     }
   }
 
@@ -393,7 +404,7 @@ export class Scanner {
     const row = core.store.rowByPath(p)
     if (row && row.meta_mtime_ms === st.mtimeMs) {
       // unchanged since we last read (or wrote) it: same mtime and the exact size of what we would write
-      try { if (Buffer.byteLength(serializeBmeta(core.store.meta(row))) === st.size) return { ok: true, id: row.id } } catch { /* fall through */ }
+      try { if (Buffer.byteLength(serializeBmeta(core.store.meta(row))) === st.size) return { ok: true, id: row.id, same: { mtimeMs: st.mtimeMs, size: st.size } } } catch { /* fall through */ }
     }
     const r = await core.fs.readSidecar(p)
     if (!r) return null
@@ -479,10 +490,14 @@ export class Scanner {
           }
           if (original) {
             handled.add(original)
-            const res = await this.syncAsset(original, id, present.get(original)!, row)
-            if (res.changed) touched.add(id)
-            if (res.added) enqueueAll.add(id)
-            if (res.content) { enqueueAll.add(id); contentChanged.add(id) }
+            const f = present.get(original)!
+            // the usual case of a rescan: one sidecar, in place, nothing changed → no need to read it again
+            if (!(paths.length === 1 && (await this.unchanged(original, f, row, side.get(original))))) {
+              const res = await this.syncAsset(original, id, f, row)
+              if (res.changed) touched.add(id)
+              if (res.added) enqueueAll.add(id)
+              if (res.content) { enqueueAll.add(id); contentChanged.add(id) }
+            }
           }
           const ownerPath = original ?? row?.path ?? ''
           for (const c of copies) {
@@ -728,6 +743,20 @@ export class Scanner {
       if (ta !== tb) return ta - tb
       return a < b ? -1 : a > b ? 1 : 0
     })
+  }
+
+  /**
+   * Inside the lock: the asset at `p` is exactly what the index holds — same path, same content hash, and its sidecar
+   * still the one the snapshot found matching the index (same mtime and size as then, ADR-046's check). Then there is
+   * nothing to reconcile and the sidecar is not read again; only a changed file stat is noted (what syncAsset would do).
+   */
+  private async unchanged(p: string, f: FileInfo, row: AssetRow | undefined, side: SideInfo | undefined): Promise<boolean> {
+    if (!row || row.missing || row.path !== p || row.hash !== f.hash || !side?.ok || !side.same) return false
+    if (row.meta_mtime_ms !== side.same.mtimeMs) return false
+    const sc = await this.core.fs.stat(p + SIDECAR_SUFFIX)
+    if (!sc || sc.mtimeMs !== side.same.mtimeMs || sc.size !== side.same.size) return false
+    if (row.size !== f.size || row.mtime_ms !== f.mtimeMs) this.core.store.setStat(row.id, { size: f.size, mtimeMs: f.mtimeMs })
+    return true
   }
 
   /**

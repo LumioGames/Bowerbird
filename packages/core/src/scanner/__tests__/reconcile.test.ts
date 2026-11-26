@@ -1,7 +1,7 @@
 /** Reconciliation rules R1–R12 (sync-and-integrity.md「对账规则」), one or more integration tests each. */
 import fs from 'node:fs'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectiveReview } from '@bowerbird/schema'
 import { cleanupTmp, ctx, makeLib, type TestLib } from '../../service/__tests__/harness.js'
 
@@ -420,6 +420,34 @@ describe('R12 source toHash differs from the upstream hash → stale-upstream', 
     await t.svc.acknowledgeUpstream(down, up, ctx)
     expect(t.sidecar('down.png').relations?.[0]?.toHash).toBe(t.row(up)!.hash)
     expect(t.issues('stale-upstream')).toEqual([])
+  })
+})
+
+describe('rescan without changes', () => {
+  it('does not read unchanged sidecars again; the pipeline yields while a full scan works, not for a folder scan', async () => {
+    const t = await lib()
+    t.write('a.png', PNG('a'))
+    t.write('b.png', PNG('b'))
+    t.write('docs/c.md', '# c')
+    await t.scan()
+    const reads = vi.spyOn(t.svc.fs, 'readSidecar')
+    t.pipeline.yields.length = 0
+    await t.scan()
+    expect(reads).not.toHaveBeenCalled()
+    expect(t.pipeline.yields).toEqual([true, false])
+    // a sidecar edited outside Bowerbird is still read and taken in
+    t.setSidecar('a.png', { ...t.sidecar('a.png'), tags: ['外部'] })
+    await t.scan()
+    expect(reads.mock.calls.map(c => c[0])).toContain('a.png')
+    expect(t.svc.store.meta(t.rowByPath('a.png')!).tags).toEqual(['外部'])
+    // so is changed content (R4)
+    t.write('b.png', PNG('b2'))
+    await t.scan()
+    expect(t.sidecar('b.png').versions).toHaveLength(2)
+    t.pipeline.yields.length = 0
+    await t.scan('docs')
+    expect(t.pipeline.yields).toEqual([])
+    reads.mockRestore()
   })
 })
 

@@ -151,6 +151,7 @@ export class LibraryServiceImpl implements LibraryService {
       registering: () => this.registering,
       beforeFull: () => this.loadLibraryData(),
       afterFull: () => this.afterFullScan(),
+      onFullBusy: busy => this.pipeline?.yieldToScan?.(busy),
       canScan: async () => !!(await this.fs.stat(''))?.isDir && (!this.core.lib || (await this.fs.exists('.bowerbird/library.json'))),
       onScanned: ids => { this.core.lock.detached(() => { void this.pairPending(ids).catch(e => this.log.warn('slot pairing failed', { error: String(e) })) }) }
     })

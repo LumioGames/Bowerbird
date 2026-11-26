@@ -128,6 +128,8 @@ export function fakeQuery(o: QueryEngineOptions): QueryEngine & { removed: strin
 
 export interface FakePipeline extends Pipeline {
   calls: Array<{ id: Guid; stages: PipelineStage[] | 'all'; reason?: string }>
+  /** yieldToScan calls, in order (full scans start / end). */
+  yields: boolean[]
   actionRuns: Array<{ actionId: string; ids: Guid[]; params?: unknown; actor: string }>
   /** What summaryImage answers (tests set it). */
   summaryImages: Map<Guid, { variant: 'turnaround' | 'thumb'; path: string }>
@@ -137,11 +139,14 @@ export interface FakePipeline extends Pipeline {
 
 export function fakePipeline(): FakePipeline {
   const calls: FakePipeline['calls'] = []
+  const yields: boolean[] = []
   const actionRuns: FakePipeline['actionRuns'] = []
   const summaryImages: FakePipeline['summaryImages'] = new Map()
   const scan = { running: false, phase: 'idle' as const, done: 0, total: 0 }
   return {
     calls,
+    yields,
+    yieldToScan(on) { yields.push(on) },
     start() {}, stop: async () => {},
     enqueue(id, stages, opts) { calls.push({ id, stages, reason: opts?.reason }) },
     forget() {}, markVisible() {},

@@ -95,3 +95,4 @@
 | [ADR-062](ADR-062-plugin-text-languages.md) | 插件文字的多语言：清单按原文给译文，服务端写下的文字由插件网页部分按语言说出 | Accepted |
 | [ADR-063](ADR-063-first-run-open-or-create.md) | 第一次使用：欢迎页给两条路——打开已有文件夹，或新建资产库 | Accepted |
 | [ADR-064](ADR-064-onboarding-points-at-buttons.md) | 新手引导分散到各处讲，用小手指指着具体的按钮；新类型文件能做什么由格式插件说 | Accepted |
+| [ADR-065](ADR-065-pipeline-yields-to-full-scan.md) | 全库扫描时管线让路；没变的元数据文件对账时不再读 | 提议 |

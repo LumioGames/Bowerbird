@@ -12,4 +12,4 @@
 - **分发**：npm 主包 `bowerbird`（带内置插件与构建好的外壳）、`Dockerfile`。
 - **许可**：PolyForm Shield 1.0.0，另加 LumioGames 的附加许可和商标说明（ADR-058）；写插件用的 `@bowerbird/plugin-sdk`、`@bowerbird/plugin-build`、`@bowerbird/schema` 按 MIT（ADR-059）；第三方组件见 `THIRD_PARTY_NOTICES.md`。
 
-实现中补的决定见 ADR-027 至 ADR-063（`.spec/decisions/`）。
+实现中补的决定见 ADR-027 至 ADR-065（`.spec/decisions/`）。

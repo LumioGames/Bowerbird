@@ -263,6 +263,28 @@ describe('pipeline stages', () => {
     expect(order).toEqual(['visible.png', 'recent.png', 'backlog.png'])
   })
 
+  it('yields to a full scan: only visible assets run, one at a time; the rest waits until the scan ends', async () => {
+    const order: string[] = []
+    let now = 0, peak = 0
+    const probe = async (f: { name: string }) => { now++; peak = Math.max(peak, now); order.push(f.name); await new Promise(r => setTimeout(r, 15)); now--; return { tech: {} } }
+    const { db, pipe } = rig([imageFormat({ probe: probe as never })], { concurrency: 3 })
+    const backlog = Array.from({ length: 3 }, (_, i) => seedAsset(db, { path: `backlog${i}.png` }))
+    const shown = Array.from({ length: 2 }, (_, i) => seedAsset(db, { path: `shown${i}.png` }))
+    pipe.yieldToScan(true)
+    for (const id of [...backlog, ...shown]) pipe.enqueue(id, ['probe'], { reason: 'scan' })
+    pipe.markVisible(shown)
+    pipe.start()
+    await expect.poll(() => order.length).toBe(2)
+    await new Promise(r => setTimeout(r, 60))
+    expect(order.sort()).toEqual(['shown0.png', 'shown1.png'])
+    expect(peak).toBe(1)
+    for (const id of backlog) expect(jobsOf(db, id).probe).toBe('queued')
+    pipe.yieldToScan(false)
+    await pipe.idle()
+    for (const id of backlog) expect(jobsOf(db, id).probe).toBe('done')
+    expect(peak).toBeGreaterThan(1)
+  })
+
   it('forget() drops queued work of an asset; a vanished asset ends its jobs', async () => {
     const { db, pipe } = rig([imageFormat()])
     const a = seedAsset(db, { path: 'a.png' })

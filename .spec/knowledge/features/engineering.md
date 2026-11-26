@@ -232,7 +232,7 @@ bowerbird/
 |------|------|
 | 增量启动扫描（无变化） | 30 秒内 |
 | 索引完全重建 | 以指纹计算速度为上限，过程中服务可用 |
-| 单个文件变化到事件发出 | 2 秒内 |
+| 单个文件变化到事件发出 | 3 秒内，含 2 秒的稳定性等待（ADR-066） |
 | 服务常驻内存 | 500 兆字节以内 |
 
 查询与界面的性能目标分别见 [`search.md`](search.md) 与 [`web-shell.md`](web-shell.md)。基准程序一并测这些目标，只打印对照结果，不因未达标而失败。
@@ -258,5 +258,5 @@ bowerbird/
 
 - 包与模块对应的功能设计：[`overview.md`](overview.md) 的模块地图。
 - 插件开发包的接口：[`plugin-system.md`](plugin-system.md)。
-- 决策：ADR-002、ADR-003、ADR-010、ADR-016、ADR-021、ADR-022、ADR-024、ADR-025、ADR-026、ADR-028、ADR-030、ADR-031、ADR-049、ADR-050、ADR-051、ADR-052。
+- 决策：ADR-002、ADR-003、ADR-010、ADR-016、ADR-021、ADR-022、ADR-024、ADR-025、ADR-026、ADR-028、ADR-030、ADR-031、ADR-049、ADR-050、ADR-051、ADR-052、ADR-066。
 - 已有答案的原待解决项：SQLite 绑定见 ADR-031；内置环境在代码里生成、不带 HDRI 文件，见 ADR-056；样例素材全部由脚本生成。

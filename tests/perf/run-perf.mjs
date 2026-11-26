@@ -201,7 +201,7 @@ async function main() {
   await stop(srv)
 
   fs.writeFileSync(path.join(REPO, 'tests/perf/results.json'), JSON.stringify(results, null, 2) + '\n')
-  const T = { fullIndexBuildMs: '以指纹计算速度为上限', incrementalStartScanMs: '< 30000', fileChangeToEventMs: '< 2000', rssSteadyMB: '< 500', filterQuery: '< 100', keywordQuery: '< 200', firstScreenMs: '< 1000', scroll: '60 fps', folderSwitchMs: '< 300', quickLookImageMs: '< 200' }
+  const T = { fullIndexBuildMs: '以指纹计算速度为上限', incrementalStartScanMs: '< 30000', fileChangeToEventMs: '< 3000', rssSteadyMB: '< 500', filterQuery: '< 100', keywordQuery: '< 200', firstScreenMs: '< 1000', scroll: '60 fps', folderSwitchMs: '< 300', quickLookImageMs: '< 200' }
   console.log(JSON.stringify(results, null, 2))
   console.log('targets:', T)
   if (!args.includes('--keep')) fs.rmSync(HOME, { recursive: true, force: true })

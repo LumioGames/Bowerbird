@@ -29,3 +29,6 @@ packages/*/THIRD_PARTY_NOTICES.md
 !packages/schema/LICENSE
 !packages/plugin-sdk/LICENSE
 !packages/plugin-build/LICENSE
+
+# benchmark output (tests/perf/run-perf.mjs)
+tests/perf/results.json

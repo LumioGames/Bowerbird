@@ -342,7 +342,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
     const sub = n.center ? (last ? `v${versions.length} · ${last.note ?? ''} · ${dayTime(last.at)}` : '') : n.sub ?? ''
     return (
       <AssetContextMenu key={n.key} ids={[a.id]} context="graph">
-        <div {...common} data-asset={a.id}
+        <div {...common} data-asset={a.id} data-onboard={n.center ? 'graph.center' : undefined}
           className={cn('w2-gn', n.center && 'w2-gn--center', isSel && 'w2-gn--sel', hl.has(n.key) && 'w2-gn--hl', link?.over === a.id && 'w2-gn--drop', kb === a.id && 'w2-gn--kb')}
           style={pos}
           onClick={e => {

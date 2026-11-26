@@ -7,6 +7,8 @@
 import { defineMessages, pageLocale, translate as lookUp, useMessages, type Locale } from '@bowerbird/plugin-sdk/web'
 
 const ZH = {
+  // the new-file hint (FormatView.intro, ADR-064)
+  intro: '能看通道、分屏，还能和四视图对照。',
   // channels (builtin-plugins.md「通道」)
   'ch.full': '完整渲染', 'ch.base': '基础色', 'ch.normal': '法线', 'ch.rough': '粗糙度', 'ch.metal': '金属度', 'ch.ao': '环境光遮蔽',
   'ch.emit': '自发光', 'ch.alpha': '透明度', 'ch.vcol': '顶点色', 'ch.wire': '线框', 'ch.wireover': '线框叠加', 'ch.uv': 'UV 棋盘格',
@@ -68,6 +70,7 @@ const ZH = {
 export type Key = keyof typeof ZH
 
 const EN: Record<Key, string> = {
+  intro: 'View its channels, split the view, and check it against a turnaround sheet.',
   'ch.full': 'Full render', 'ch.base': 'Base color', 'ch.normal': 'Normal', 'ch.rough': 'Roughness', 'ch.metal': 'Metalness', 'ch.ao': 'Ambient occlusion',
   'ch.emit': 'Emissive', 'ch.alpha': 'Opacity', 'ch.vcol': 'Vertex color', 'ch.wire': 'Wireframe', 'ch.wireover': 'Wireframe overlay', 'ch.uv': 'UV checker',
   'ch.matcap': 'Matcap', 'ch.face': 'Face orientation', 'ch.density': 'Texel density',
@@ -119,6 +122,7 @@ const EN: Record<Key, string> = {
 }
 
 const JA: Record<Key, string> = {
+  intro: 'チャンネル表示や画面分割ができ、四面図と照らし合わせることもできます。',
   'ch.full': 'フルレンダー', 'ch.base': 'ベースカラー', 'ch.normal': '法線', 'ch.rough': '粗さ', 'ch.metal': 'メタリック', 'ch.ao': 'アンビエントオクルージョン',
   'ch.emit': 'エミッション', 'ch.alpha': '不透明度', 'ch.vcol': '頂点カラー', 'ch.wire': 'ワイヤーフレーム', 'ch.wireover': 'ワイヤーフレーム重ね表示', 'ch.uv': 'UV チェッカー',
   'ch.matcap': 'Matcap', 'ch.face': '面の向き', 'ch.density': 'テクセル密度',
@@ -170,6 +174,7 @@ const JA: Record<Key, string> = {
 }
 
 const KO: Record<Key, string> = {
+  intro: '채널을 보고 화면을 나눠 볼 수 있고, 4면도와 맞춰 볼 수도 있어요.',
   'ch.full': '전체 렌더', 'ch.base': '베이스 컬러', 'ch.normal': '노멀', 'ch.rough': '거칠기', 'ch.metal': '메탈릭', 'ch.ao': '앰비언트 오클루전',
   'ch.emit': '이미션', 'ch.alpha': '불투명도', 'ch.vcol': '버텍스 컬러', 'ch.wire': '와이어프레임', 'ch.wireover': '와이어프레임 오버레이', 'ch.uv': 'UV 체커',
   'ch.matcap': 'Matcap', 'ch.face': '면 방향', 'ch.density': '텍셀 밀도',

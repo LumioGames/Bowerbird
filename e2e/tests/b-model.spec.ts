@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '../helpers/test'
 import { startBB, idOf, openDetail } from '../helpers/b-server'
 import { browseFolder, cell, decodePng, pngStats, toast } from '../helpers/b-ui'
 import type { Bowerbird } from '../helpers/server'

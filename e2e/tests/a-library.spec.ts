@@ -2,7 +2,7 @@
  * pages.md「资产库」(ADR-026, ADR-033, F-11, copy.md 资产库): 第一次打开（还没有资产库：欢迎页的两个选择、选文件夹对话框）、
  * 切换资产库（登记过的库、当前、只切换这个浏览器、切回）与添加资产库（同样的两个选择；空文件夹直接成为空资产库；有文件的走首次打开）.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../helpers/test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

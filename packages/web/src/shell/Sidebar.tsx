@@ -22,11 +22,12 @@ import { hasConditions, paramsFromState, smartQueryOf, stateFromParams, stateFro
 import { libPath } from './runtime'
 import { DRAG_TYPE } from './drag'
 import { TasksRing, tasksLabel, useTasksState } from './TasksRing'
+import { HelpMenu } from '../onboarding/HelpMenu'
 
 /**
  * Side bar (web-shell.md 左栏, pages.md 外壳): the library menu, the five views with counts (「有问题」counts the
  * same way as the integrity page and flashes when it changes), smart folders, the real folder tree (display name,
- * icon, note; drag assets onto a folder to move them), plugin sections, and the footer「设置」「标签」「任务」.
+ * icon, note; drag assets onto a folder to move them), plugin sections, and the footer「设置」「帮助」「标签」「任务」.
  */
 const BUILTIN = [
   { id: 'all', icon: 'inbox' },
@@ -212,11 +213,12 @@ export function Sidebar({ lib, info, onFolderInfo }: { lib: string; info: Librar
           </div>
         ))}
       </div>
-      {/* Icons only (product decision 2026-11-26): settings bottom-left; tags and the tasks ring on the right.
-          Names (and the tasks state) live in title / aria-label. */}
+      {/* Icons only (product decision 2026-11-26): settings bottom-left; help (onboarding, ADR-064), tags and the
+          tasks ring on the right. Names (and the tasks state) live in title / aria-label. */}
       <div className="flex h-11 shrink-0 items-center gap-1 px-2 shadow-[inset_0_1px_0_var(--line-hairline)]" data-testid="side-footer">
-        <Button variant="ghost" size="icon" aria-label={t('side.settings')} title={`${t('side.settings')} ${kbd('mod+,')}`} onClick={() => go(libPath(lib, '/settings'))}><Icon name="settings" /></Button>
+        <Button variant="ghost" size="icon" aria-label={t('side.settings')} title={`${t('side.settings')} ${kbd('mod+,')}`} data-onboard="side.settings" onClick={() => go(libPath(lib, '/settings'))}><Icon name="settings" /></Button>
         <div className="ml-auto flex items-center gap-1">
+          <HelpMenu lib={lib} />
           <Button variant="ghost" size="icon" aria-label={t('side.tags')} title={t('side.tags')} onClick={() => go(libPath(lib, '/tags'))}><Icon name="tags" /></Button>
           <Button variant="ghost" size="icon" aria-label={tasksLabel(tasks)} title={tasksLabel(tasks)} data-testid="side-tasks" onClick={() => go(libPath(lib, '/settings/tasks'))}><TasksRing state={tasks} /></Button>
         </div>

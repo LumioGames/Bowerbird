@@ -129,7 +129,7 @@ export function TrashPage() {
                 <span role="cell"><Mono className="min-w-0 truncate" title={who(it.deletedBy)}>{who(it.deletedBy)}</Mono></span>
                 <span role="cell" className={cn('w2-num', isSoon(it.daysLeft) && 'w2-tr__soon')} data-days-left={it.daysLeft}>{t('trash.days', { n: it.daysLeft })}</span>
                 <span role="cell" className="w2-tr__a">
-                  <Btn size="sm" onClick={() => void restoreOne(it)}>{t('trash.restore')}</Btn>
+                  <Btn size="sm" data-onboard="trash.restore" data-onboard-n={days} onClick={() => void restoreOne(it)}>{t('trash.restore')}</Btn>
                   <Btn size="sm" variant="ghost" onClick={() => void purge([it])}>{t('trash.purgeMore')}</Btn>
                 </span>
               </div>

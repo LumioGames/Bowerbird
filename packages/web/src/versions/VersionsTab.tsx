@@ -87,7 +87,7 @@ export function VersionsTab({ lib, asset }: { lib: string; asset: AssetDetail })
     </>
     if (!plug) return <div key={x.n} className="w2-vtr">{inner}</div>
     return (
-      <button key={x.n} type="button" className={cn('w2-vtr', picked?.n === x.n && 'on', off && 'w2-vtr--off')} title={off ? t('ver.noContentTip') : undefined} aria-pressed={picked?.n === x.n} onClick={() => setSel(x.n)}>
+      <button key={x.n} type="button" className={cn('w2-vtr', picked?.n === x.n && 'on', off && 'w2-vtr--off')} title={off ? t('ver.noContentTip') : undefined} aria-pressed={picked?.n === x.n} data-onboard={x.current ? undefined : 'ver.first'} onClick={() => setSel(x.n)}>
         {inner}
       </button>
     )
@@ -98,7 +98,7 @@ export function VersionsTab({ lib, asset }: { lib: string; asset: AssetDetail })
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="w2-vt__note">
-          <Banner tone="info" title={t('ver.noPluginTitle')} actions={<Btn size="sm" icon="puzzle" onClick={() => void openVersionPluginPicker(refresh)}>{t('ver.pickPlugin')}</Btn>}>
+          <Banner tone="info" title={t('ver.noPluginTitle')} actions={<Btn size="sm" icon="puzzle" data-onboard="ver.pick" onClick={() => void openVersionPluginPicker(refresh)}>{t('ver.pickPlugin')}</Btn>}>
             {t('ver.noPluginText')}
           </Banner>
         </div>

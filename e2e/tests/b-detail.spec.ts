@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../helpers/test'
 import { startBB, idOf, libPath, openDetail, detailTabs } from '../helpers/b-server'
 import { browseFolder, cell, dialog, MOD, toast } from '../helpers/b-ui'
 import type { Bowerbird } from '../helpers/server'

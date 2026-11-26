@@ -51,7 +51,8 @@ export default defineWebPlugin({
       compareModes: audioCompareModes,
       formatBadge,
       get techLabels() { return techLabels() },
-      techRows: (asset, locale) => audioTechRows(asset, inLocale(locale))
+      techRows: (asset, locale) => audioTechRows(asset, inLocale(locale)),
+      intro: locale => inLocale(locale)('intro')
     }
   }
 })

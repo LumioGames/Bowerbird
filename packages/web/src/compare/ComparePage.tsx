@@ -151,7 +151,7 @@ export function ComparePage() {
         <Btn variant="ghost" iconOnly icon="arrow-up-down" className="w2-cswap" aria-label={t('cmp.swap')} title={t('cmp.swap')} onClick={swap} />
         <SidePicker lib={lib} side={b} other={a} onPick={(id, v) => update({ b: id, bv: v })} compact={fold(CFOLD.marks)} />
         <Grow />
-        <Seg<CompareMode> label={t('cmp.modes')} value={mode} onChange={setMode}
+        <Seg<CompareMode> label={t('cmp.modes')} anchor="cmp.modes" value={mode} onChange={setMode}
           onUnavailable={reason => toast({ title: reason })}
           items={MODES.map(m => {
             const r = resolved.modes.find(x => x.mode === m.mode)!

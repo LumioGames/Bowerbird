@@ -6,6 +6,8 @@
 import { defineMessages, pageLocale, translate as lookUp, useMessages } from '@bowerbird/plugin-sdk/web'
 
 const ZH = {
+  // the new-file hint (FormatView.intro, ADR-064)
+  intro: '能看单个通道、取色，平铺检查接缝。',
   play: '播放', pause: '暂停', playKey: '播放 空格', pauseKey: '暂停 空格', prevFrame: '上一帧', nextFrame: '下一帧', frameOf: '帧 {i} / {n}',
   views: '视图', whole: '整图', 'view.front': '正', 'view.side': '侧', 'view.back': '背', 'view.top': '顶',
   fit: '适应', fitTitle: '适应窗口', one: '1:1', oneTitle: '原始大小',
@@ -25,6 +27,7 @@ const ZH = {
 export type Key = keyof typeof ZH
 
 const EN: Record<Key, string> = {
+  intro: 'View single channels, pick colours, and tile it to check the seams.',
   play: 'Play', pause: 'Pause', playKey: 'Play  Space', pauseKey: 'Pause  Space', prevFrame: 'Previous frame', nextFrame: 'Next frame', frameOf: 'Frame {i} / {n}',
   views: 'Views', whole: 'Sheet', 'view.front': 'Front', 'view.side': 'Side', 'view.back': 'Back', 'view.top': 'Top',
   fit: 'Fit', fitTitle: 'Fit to window', one: '1:1', oneTitle: 'Actual size',
@@ -41,6 +44,7 @@ const EN: Record<Key, string> = {
 }
 
 const JA: Record<Key, string> = {
+  intro: 'チャンネルを個別に表示したり、色を拾ったり、タイル表示で継ぎ目を確かめたりできます。',
   play: '再生', pause: '一時停止', playKey: '再生  スペース', pauseKey: '一時停止  スペース', prevFrame: '前のフレーム', nextFrame: '次のフレーム', frameOf: 'フレーム {i} / {n}',
   views: 'ビュー', whole: '全体', 'view.front': '正面', 'view.side': '側面', 'view.back': '背面', 'view.top': '上面',
   fit: '全体表示', fitTitle: 'ウィンドウに合わせる', one: '1:1', oneTitle: '原寸',
@@ -57,6 +61,7 @@ const JA: Record<Key, string> = {
 }
 
 const KO: Record<Key, string> = {
+  intro: '채널을 하나씩 보고, 색을 찍고, 타일로 이어 붙여 이음새를 확인할 수 있어요.',
   play: '재생', pause: '일시정지', playKey: '재생  Space', pauseKey: '일시정지  Space', prevFrame: '이전 프레임', nextFrame: '다음 프레임', frameOf: '프레임 {i} / {n}',
   views: '뷰', whole: '전체', 'view.front': '정면', 'view.side': '측면', 'view.back': '후면', 'view.top': '윗면',
   fit: '맞춤', fitTitle: '창에 맞추기', one: '1:1', oneTitle: '원본 크기',

@@ -86,7 +86,7 @@ export function ReviewTab({ lib, asset }: { lib: string; asset: AssetDetail }) {
         {upId && <Btn icon="git-compare-arrows" title={t('rev.compareWith', { name: upName ?? '' })} onClick={() => navigate(comparePath(lib, asset.id, upId))}>{t('rev.compareUp')}</Btn>}
         {asset.review !== 'exempt' && <>
           <Btn icon="undo-2" disabled={busy} onClick={() => void decide('rejected')}>{t('rev.rejectMore')}</Btn>
-          <Btn icon="check" variant="primary" disabled={busy || asset.review === 'approved'} onClick={() => void decide('approved')}>{t('rev.approve')}</Btn>
+          <Btn icon="check" variant="primary" data-onboard="rev.pass" disabled={busy || asset.review === 'approved'} onClick={() => void decide('approved')}>{t('rev.approve')}</Btn>
         </>}
       </section>
       {v?.note && (

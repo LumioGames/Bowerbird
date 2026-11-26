@@ -2,7 +2,7 @@
  * 「别人的改动」(pages.md 浏览页 / 详情页, F-03): what another client adds waits behind「有 N 个新资产 · 显示」; an asset
  * being looked at that someone replaces gets a banner and keeps showing the old content until「显示新版本」.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../helpers/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createApiClient } from '@bowerbird/schema'

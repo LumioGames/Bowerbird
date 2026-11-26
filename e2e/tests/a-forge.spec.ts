@@ -4,7 +4,7 @@
  * 右键菜单里插件动作的插槽（「生成变体（Forge）」）.
  * Build the fixture plugin first: pnpm --filter @bowerbird-fixtures/plugin-forge build
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../helpers/test'
 import path from 'node:path'
 import { REPO, startBowerbird, type Bowerbird } from '../helpers/a-server'
 import { assetByPath, cell, contextMenu, dialog, inspector, libUrl, menuItem, openBrowse, sidebar, toast, toolbar, waitAsset, waitScanned } from '../helpers/a-app'

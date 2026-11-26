@@ -473,6 +473,8 @@ export interface FormatView {
   techRows?(asset: AssetDetail, locale: Locale): Array<[label: string, value: string]> | null
   /** 把提取时写下的角标（例如「2,480 面」）按界面语言说出来；没有或返回 null 时显示原文 */
   formatBadge?(badge: string, locale: Locale): string | null
+  /** 资产库里第一次出现这一类文件时，外壳指着它说的那一句话：这种文件打开后能做什么（ADR-064）；没有或返回 null 时不提示 */
+  intro?(locale: Locale): string | null
 }
 
 export interface UiContributions {

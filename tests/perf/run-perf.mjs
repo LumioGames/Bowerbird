@@ -142,6 +142,8 @@ async function main() {
     const { chromium } = await import(path.join(REPO, 'node_modules/@playwright/test/index.js')).then(m => m.default ?? m).catch(async () => await import('@playwright/test'))
     const browser = await chromium.launch()
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+    // onboarding hints off (onboarding.md「测试」): the tour would sit over the grid being measured
+    await page.addInitScript(() => { try { localStorage.setItem('bowerbird.onboarding', JSON.stringify({ off: true })) } catch {} })
     const t0 = now()
     await page.goto(`${srv.url}/libraries/${srv.lib}`)
     await page.waitForSelector(CELL, { timeout: 30_000 })

@@ -19,7 +19,7 @@ export function Section({ title, count, by, defaultCollapsed, children, id, clas
   const [collapsed, setCollapsed] = React.useState(() => (key && collapsedMemory.has(key) ? collapsedMemory.get(key)! : !!defaultCollapsed))
   const toggle = () => setCollapsed(c => { if (key) collapsedMemory.set(key, !c); return !c })
   return (
-    <section data-collapsed={collapsed || undefined} className={cn('px-4 pt-2 pb-3 [&+&]:shadow-[inset_0_1px_0_var(--line-hairline)]', className)}>
+    <section data-section={key || undefined} data-collapsed={collapsed || undefined} className={cn('px-4 pt-2 pb-3 [&+&]:shadow-[inset_0_1px_0_var(--line-hairline)]', className)}>
       <div
         role="button"
         tabIndex={0}

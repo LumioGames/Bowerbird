@@ -93,7 +93,7 @@ export function SearchBox({ state, onCommit, source, inputRef, narrow }: {
 
   return (
     // in a crowded bar the box gives way before the path does (its shrink factor dwarfs the path's 1)
-    <div className={cn('relative flex-[0_1_300px] ![flex-shrink:1000]', narrow ? 'min-w-[128px]' : 'min-w-[180px]')}>
+    <div className={cn('relative flex-[0_1_300px] ![flex-shrink:1000]', narrow ? 'min-w-[128px]' : 'min-w-[180px]')} data-onboard="search">
       <div
         onClick={() => own.current?.focus()}
         className="bb-no-scrollbar flex h-7 min-w-0 cursor-text items-center gap-1.5 overflow-x-auto rounded-sm bg-fill-rest px-2 text-ink-1 transition-colors duration-fade hover:bg-fill-hover focus-within:bg-fill-rest focus-within:outline-2 focus-within:outline-accent-ring"

@@ -106,6 +106,12 @@ export interface FormatView {
    * detail). Return the badge unchanged (or null) for text it does not know. Called often: keep it cheap and pure.
    */
   formatBadge?(badge: string, locale: Locale): string | null
+  /**
+   * One sentence on what this kind of file can do once opened, in `locale` — e.g.「能看通道、分屏，还能和四视图对照。」.
+   * The first time the grid shows a file of this format, the shell points at it with this sentence under the format's
+   * name (ADR-064). Absent, null or empty: no hint for this format.
+   */
+  intro?(locale: Locale): string | null
 }
 
 /**

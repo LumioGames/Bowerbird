@@ -26,6 +26,7 @@ import { useRenderWorker } from '../plugins/render-worker'
 import { UploadPanel } from '../flows/upload'
 import { ClaimPanel, firstOpenFlow } from '../flows/library'
 import { Sidebar } from './Sidebar'
+import { OnboardingHost } from '../onboarding/OnboardingHost'
 import { libPath, setRuntime } from './runtime'
 import { createScanFindings, createScanSummary } from './scan-findings'
 import { registering } from '../flows/library'
@@ -231,6 +232,7 @@ function Frame({ lib }: { lib: string }) {
           </div>
           <DialogHost />
           <QuickLookHost />
+          <OnboardingHost lib={lib} />
           <UploadPanel onHeight={setUploadH} />
           <ClaimPanel go={p => navigate(p)} />
           {/* toasts: bottom right; above the upload panel; above a viewer's timeline and controls (E-28) */}

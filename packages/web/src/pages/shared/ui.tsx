@@ -49,6 +49,8 @@ export function Seg<T extends string>(p: {
   onUnavailable?(reason: string, value: T): void
   label: string
   className?: string
+  /** Mark for onboarding hints that point at this control (`data-onboard`, ADR-064). */
+  anchor?: string
 }) {
   const refs = React.useRef<Array<HTMLButtonElement | null>>([])
   const pick = (it: SegItem<T>) => {
@@ -67,7 +69,7 @@ export function Seg<T extends string>(p: {
     }
   }
   const group = (
-    <ToggleGroup type="single" role="radiogroup" aria-label={p.label} value={p.value} className={cn('w2-seg2 shrink-0', p.className)}
+    <ToggleGroup type="single" role="radiogroup" aria-label={p.label} data-onboard={p.anchor} value={p.value} className={cn('w2-seg2 shrink-0', p.className)}
       onValueChange={v => { const it = p.items.find(x => x.value === v); if (it) pick(it) }}>
       {p.items.map((it, i) => {
         const btn = (

@@ -242,7 +242,7 @@ function ListView(p: GridProps & { host: React.RefObject<HTMLDivElement | null>;
         const sel = p.selected.has(a.id)
         const missing = a.flags.includes('missing')
         return (
-          <div key={a.id} role="row" data-asset-cell={a.id} aria-selected={sel} tabIndex={p.focus === a.id ? 0 : -1} draggable
+          <div key={a.id} role="row" data-asset-cell={a.id} data-format={a.format} aria-selected={sel} tabIndex={p.focus === a.id ? 0 : -1} draggable
             onClick={e => p.onPointerSelect(e, a.id)} onDoubleClick={() => p.onOpen(a.id)} onContextMenu={e => p.onContext(e, a.id)} onKeyDown={e => { keyboardContextMenu(e) }} onDragStart={e => p.onDragStart(e, a.id)}
             className={cn('absolute inset-x-0 grid h-9 cursor-default select-none items-center rounded-sm text-[12px] leading-4 tabular-nums text-ink-2 outline-none focus-visible:outline-2 focus-visible:outline-accent-ring', sel ? 'bg-accent-soft' : 'hover:bg-fill-rest')}
             style={{ top, gridTemplateColumns: template + ' 28px' }}>

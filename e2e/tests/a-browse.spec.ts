@@ -2,7 +2,7 @@
  * pages.md「浏览页」: 正常（三种布局、状态标记）、选择、悬停转台、筛选与条件标签、搜索（补全、相关度、命中片段）、空资产库、
  * 搜索无结果、文件夹为空、加载中、连接失败与重试、单元格的各种资产状态.
  */
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Page, type Route } from '../helpers/test'
 import { startBowerbird, type Bowerbird } from '../helpers/a-server'
 import { cell, grid, libUrl, MOD, openBrowse, openLibrary, toolbar, waitScanned } from '../helpers/a-app'
 

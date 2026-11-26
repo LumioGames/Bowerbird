@@ -219,7 +219,7 @@ export function IssuesPage() {
                           <small>{(asset ? folderOf(asset.path) : i.path) || '/'} · {t('iss.found', { when: ago(i.foundAt) })}</small>
                         </div>
                         <div className="w2-it__acts">
-                          {ROW_ACTIONS[type].map(a => { const why = disabledWhy(i, a); return <Btn key={a} size="sm" disabled={!!why} title={why ?? undefined} onClick={() => void run(i, a)}>{label(i, a)}</Btn> })}
+                          {ROW_ACTIONS[type].map((a, k) => { const why = disabledWhy(i, a); return <Btn key={a} size="sm" data-onboard={k === 0 ? 'issues.fix' : undefined} disabled={!!why} title={why ?? undefined} onClick={() => void run(i, a)}>{label(i, a)}</Btn> })}
                         </div>
                       </div>
                     )

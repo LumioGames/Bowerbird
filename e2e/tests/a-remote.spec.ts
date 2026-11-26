@@ -4,7 +4,7 @@
  * Adding a library from there: the folder chooser cannot look at the server's disk (`not_local`), only the typed path
  * field is left. The page is opened through this machine's own LAN address, so the server sees a non-loopback client.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../helpers/test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

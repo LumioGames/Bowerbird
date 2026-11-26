@@ -6,6 +6,8 @@
 import { defineMessages, pageLocale, translate as lookUp, useMessages } from '@bowerbird/plugin-sdk/web'
 
 const ZH = {
+  // the new-file hint (FormatView.intro, ADR-064)
+  intro: '能逐帧看、设入出点，把一帧设为缩略图。',
   play: '播放', pause: '暂停', playKey: '播放 空格', pauseKey: '暂停 空格', prevFrame: '上一帧', nextFrame: '下一帧', frame: '帧 {i} / {n}',
   loop: '循环', speed: '倍速', volume: '音量', inTitle: '把入点设在当前位置', in: '入点', outTitle: '把出点设在当前位置', out: '出点', more: '更多',
   setThumb: '把当前帧设为缩略图', saveFrame: '把当前帧另存为图片资产', thumbDone: '已把第 {n} 帧设为缩略图', thumbFailed: '没能设为缩略图',
@@ -21,6 +23,7 @@ const ZH = {
 export type Key = keyof typeof ZH
 
 const EN: Record<Key, string> = {
+  intro: 'Step frame by frame, set in and out points, and make any frame the thumbnail.',
   play: 'Play', pause: 'Pause', playKey: 'Play  Space', pauseKey: 'Pause  Space', prevFrame: 'Previous frame', nextFrame: 'Next frame', frame: 'Frame {i} / {n}',
   loop: 'Loop', speed: 'Speed', volume: 'Volume', inTitle: 'Set the in point here', in: 'In', outTitle: 'Set the out point here', out: 'Out', more: 'More',
   setThumb: 'Use this frame as the thumbnail', saveFrame: 'Save this frame as an image asset', thumbDone: 'Frame {n} is now the thumbnail', thumbFailed: 'Could not set the thumbnail',
@@ -33,6 +36,7 @@ const EN: Record<Key, string> = {
 }
 
 const JA: Record<Key, string> = {
+  intro: 'コマ送りで見たり、イン点とアウト点を決めたり、好きなコマをサムネイルにしたりできます。',
   play: '再生', pause: '一時停止', playKey: '再生  スペース', pauseKey: '一時停止  スペース', prevFrame: '前のフレーム', nextFrame: '次のフレーム', frame: 'フレーム {i} / {n}',
   loop: 'ループ', speed: '再生速度', volume: '音量', inTitle: '現在位置をイン点にします', in: 'イン点', outTitle: '現在位置をアウト点にします', out: 'アウト点', more: 'その他',
   setThumb: '現在のフレームをサムネイルにする', saveFrame: '現在のフレームを画像アセットとして保存', thumbDone: 'フレーム {n} をサムネイルにしました', thumbFailed: 'サムネイルに設定できませんでした',
@@ -45,6 +49,7 @@ const JA: Record<Key, string> = {
 }
 
 const KO: Record<Key, string> = {
+  intro: '프레임 단위로 보고, 시작점과 끝점을 정하고, 원하는 프레임을 썸네일로 쓸 수 있어요.',
   play: '재생', pause: '일시정지', playKey: '재생  Space', pauseKey: '일시정지  Space', prevFrame: '이전 프레임', nextFrame: '다음 프레임', frame: '프레임 {i} / {n}',
   loop: '반복', speed: '재생 속도', volume: '볼륨', inTitle: '현재 위치를 시작점으로 지정', in: '시작점', outTitle: '현재 위치를 끝점으로 지정', out: '끝점', more: '더 보기',
   setThumb: '현재 프레임을 썸네일로 지정', saveFrame: '현재 프레임을 이미지 에셋으로 저장', thumbDone: '{n}번째 프레임을 썸네일로 지정했어요', thumbFailed: '썸네일로 지정하지 못했어요',

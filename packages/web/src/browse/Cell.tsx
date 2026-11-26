@@ -99,6 +99,7 @@ export const Cell = React.memo(function Cell(p: CellProps) {
   return (
     <div
       data-asset-cell={a.id}
+      data-format={a.format}
       role="option"
       aria-selected={p.selected}
       tabIndex={p.focused ? 0 : -1}

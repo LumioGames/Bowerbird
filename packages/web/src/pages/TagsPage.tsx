@@ -129,7 +129,7 @@ export function TagsPage() {
                 {tag.aliases?.length ? <small>{t('tags.aliases', { list: tag.aliases.join('、') })}</small> : null}
                 <Grow />
                 <Num className={cn(tag.count <= FEW && 'w2-tg__few')}>{tag.count}</Num>
-                <Menu align="end" trigger={<Btn size="sm" variant="ghost" iconOnly icon="ellipsis" aria-label={t('tags.more', { tag: tag.name })} />} items={() => moreItems(tag)} />
+                <Menu align="end" trigger={<Btn size="sm" variant="ghost" iconOnly icon="ellipsis" data-onboard="tags.more" aria-label={t('tags.more', { tag: tag.name })} />} items={() => moreItems(tag)} />
               </div>
             ))}
           </section>

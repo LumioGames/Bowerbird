@@ -45,7 +45,8 @@ export default defineWebPlugin({
       renderThumbnail,
       renderSummary,
       get techLabels() { return techLabels() },
-      techRows: (asset, locale) => videoTechRows(asset, inLocale(locale))
+      techRows: (asset, locale) => videoTechRows(asset, inLocale(locale)),
+      intro: locale => inLocale(locale)('intro')
     }
   }
 })

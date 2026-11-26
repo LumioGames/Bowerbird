@@ -6,6 +6,8 @@
 import { defineMessages, pageLocale, translate as lookUp, useMessages } from '@bowerbird/plugin-sdk/web'
 
 const ZH = {
+  // the new-file hint (FormatView.intro, ADR-064)
+  intro: '按空格试听；能看波形和频谱，选一段循环。',
   play: '播放', pause: '暂停', playKey: '播放 空格', pauseKey: '暂停 空格', loop: '循环', volume: '音量',
   display: '显示', wave: '波形', spectrum: '频谱', peak: '峰值 {v} dB', clips: '削波 {n} 处', clip: '削波',
   listening: '正在听', flip: '切换', flipTitle: '在 A 和 B 之间切换，位置不变', listen: '听 {k}', current: '当前',
@@ -20,6 +22,7 @@ const ZH = {
 export type Key = keyof typeof ZH
 
 const EN: Record<Key, string> = {
+  intro: 'Press Space to listen; see the waveform and spectrum, and loop a selection.',
   play: 'Play', pause: 'Pause', playKey: 'Play  Space', pauseKey: 'Pause  Space', loop: 'Loop', volume: 'Volume',
   display: 'Display', wave: 'Waveform', spectrum: 'Spectrum', peak: 'Peak {v} dB', clips: '{n} clipped', clip: 'Clipped',
   listening: 'Listening to', flip: 'Switch', flipTitle: 'Switch between A and B, keeping the position', listen: 'Listen to {k}', current: 'current',
@@ -30,6 +33,7 @@ const EN: Record<Key, string> = {
 }
 
 const JA: Record<Key, string> = {
+  intro: 'スペースキーで試聴できます。波形とスペクトルを表示し、範囲を選んでループ再生できます。',
   play: '再生', pause: '一時停止', playKey: '再生  スペース', pauseKey: '一時停止  スペース', loop: 'ループ', volume: '音量',
   display: '表示', wave: '波形', spectrum: 'スペクトル', peak: 'ピーク {v} dB', clips: 'クリップ {n} 箇所', clip: 'クリップ',
   listening: '再生中', flip: '切り替え', flipTitle: '再生位置を保ったまま A と B を切り替えます', listen: '{k} を聴く', current: '現在',
@@ -40,6 +44,7 @@ const JA: Record<Key, string> = {
 }
 
 const KO: Record<Key, string> = {
+  intro: '스페이스로 미리 들어 보세요. 파형과 스펙트럼을 보고 구간을 골라 반복 재생할 수 있어요.',
   play: '재생', pause: '일시정지', playKey: '재생  Space', pauseKey: '일시정지  Space', loop: '반복', volume: '볼륨',
   display: '표시', wave: '파형', spectrum: '스펙트럼', peak: '피크 {v} dB', clips: '클리핑 {n}곳', clip: '클리핑',
   listening: '듣는 중', flip: '전환', flipTitle: '재생 위치를 유지한 채 A와 B를 전환해요', listen: '{k} 듣기', current: '현재',

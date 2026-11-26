@@ -2,7 +2,7 @@
  * The prototype's four walkthroughs (design/review/2026-11-25-prototype-revision.md「八、验证」) against the real
  * server and the「星落镇」sample library.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../helpers/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { startBowerbird, type Bowerbird } from '../helpers/a-server'

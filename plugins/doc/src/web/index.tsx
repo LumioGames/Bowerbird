@@ -36,7 +36,8 @@ export default defineWebPlugin({
       compareModes: docCompareModes,
       GridCell: DocGridCell,
       get techLabels() { return techLabels() },
-      techRows: (asset, locale) => docTechRows(asset, inLocale(locale))
+      techRows: (asset, locale) => docTechRows(asset, inLocale(locale)),
+      intro: locale => inLocale(locale)('intro')
     }
   }
 })

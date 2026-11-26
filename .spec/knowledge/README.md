@@ -32,6 +32,7 @@ metadata:
 | [`features/search.md`](features/search.md) | 搜索——查询模型、结构化筛选字段与文本语法、关键词与语义检索的分工、结果融合、排序分页、智能文件夹；改搜索行为或写搜索插件时查 |
 | [`features/api-and-agent.md`](features/api-and-agent.md) | 接口与 Agent——HTTP API 端点、错误模型、事件流、执行者留痕、MCP 工具、命令行、Agent 摘要与标签治理、监听地址与安全；对接 Agent 或改接口时查 |
 | [`features/web-shell.md`](features/web-shell.md) | 网页外壳——页面清单、三栏布局、网格与检查器、详情与对比视图、关系图、校验与完整性流程、插槽、状态与性能目标；做交互原型或改界面时查 |
+| [`features/onboarding.md`](features/onboarding.md) | 新手引导——浏览页的五步导览、各页第一次打开时的小手指提示、新类型文件的提示、左下角「?」、按浏览器记住看过什么；改引导或加提示时查 |
 | [`features/builtin-plugins.md`](features/builtin-plugins.md) | 内置插件——图片、视频、音频、3D 模型、文档、关键词搜索各自支持的格式、提取的信息、缩略图、查看器与对比能力，含模型查看器的完整功能、四视图的格子与目标尺寸；做某类格式的支持时查 |
 | [`features/versioning.md`](features/versioning.md) | 版本管理——内核自带的版本记录、版本存储扩展点的接口、Lore 与 Git LFS 两个可选插件的设计要点、有无插件时界面的差异；做版本相关功能或写版本插件时查 |
 | [`features/engineering.md`](features/engineering.md) | 工程结构——技术选型、代码库的包划分与依赖方向、构建与分发、配置、日志、测试策略与性能基准；搭建工程、加新包或定测试方式时查 |

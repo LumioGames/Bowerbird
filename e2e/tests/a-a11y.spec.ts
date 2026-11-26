@@ -3,7 +3,7 @@
  * serious / critical 为零）. Dialogs are opened from the keyboard: buttons by Tab + Enter, the asset menu with
  * Shift+F10 on the focused cell.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '../helpers/test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

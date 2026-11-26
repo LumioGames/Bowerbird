@@ -202,6 +202,7 @@ export default defineWebPlugin({
 | `renderSummary` | 浏览器渲染 Agent 摘要的概览图 |
 | `techLabels` | 对比页技术信息表里显示哪些 `tech` 键、叫什么 |
 | `formatBadge(badge, locale)` | 把服务端写下的角标换成外壳当前的语言（见下文「多种语言」） |
+| `intro(locale)` | 网格里第一次出现这一类文件时，外壳用小手指指着它，气泡里写格式名和这一句话：打开后能做什么，例如「能看通道、分屏，还能和四视图对照。」。一句话就够；不提供或返回 `null` 时这一类不提示 |
 
 **渲染失败**：`renderThumbnail` 抛出的错误可以带 `retryable` 属性。浏览器解不了的内容（例如这台电脑的浏览器放不了 ProRes 4444）应抛出 `retryable: false` 的错误，消息写成给人看的一句话，渲染工作者会照此提交、不再重试：
 

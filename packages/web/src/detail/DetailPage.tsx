@@ -27,6 +27,7 @@ import { PluginView, safeApplies } from './PluginView'
 import { ReplacedBanner, StaleBanner } from './banners'
 import { ObjectOverview } from './ObjectOverview'
 import { assetPath, backDelta, closeTarget, crumbs, getDetailList, stepTo, type DetailState } from './nav'
+import { markFormatSeen } from '../onboarding/store'
 
 export interface DetailTab { id: string; title: string; count?: number; plugin?: string }
 
@@ -82,6 +83,7 @@ export function DetailPage() {
   }), [id])
 
   const asset = q.data
+  React.useEffect(() => { markFormatSeen(asset?.format) }, [asset?.format])
   const pluginTabs = asset ? reg.ui.detailTabs.filter(d => safeApplies(d.pluginId, d.appliesTo, asset)) : []
   const tabs = asset ? tabsFor(asset, pluginTabs) : []
   const wanted = params.get('tab')

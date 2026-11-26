@@ -2,7 +2,7 @@
  * 「首次打开已有文件的文件夹」(pages.md 浏览页, copy.md 资产库, ADR-033): the explanation, formats no plugin reads,
  * registration progress that can stop, and the closing toast naming the plugins needed.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../helpers/test'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'

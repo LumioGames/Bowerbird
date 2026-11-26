@@ -47,7 +47,8 @@ export default defineWebPlugin({
       compareModes: imageCompareModes,
       GridCell: ImageGridCell,
       get techLabels() { return techLabels() },
-      techRows: (asset, locale) => imageTechRows(asset, inLocale(locale))
+      techRows: (asset, locale) => imageTechRows(asset, inLocale(locale)),
+      intro: locale => inLocale(locale)('intro')
     }
   }
 })

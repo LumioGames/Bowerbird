@@ -26,6 +26,7 @@ import { filesFromDrop, pickAndUpload, uploadFiles, uploadsRunning } from '../fl
 import { isOwn } from '../flows/own'
 import { registering } from '../flows/library'
 import { saveSmart, saveSmartEdit } from '../flows/folders'
+import { skipTourByEscape } from '../onboarding/OnboardingHost'
 import { BrowseToolbar } from './BrowseToolbar'
 import { FilterPanel } from './FilterPanel'
 import { Grid, GridSkeleton, type GridHandle } from './Grid'
@@ -270,7 +271,7 @@ export function BrowsePage() {
   useShortcut('mod+d', () => { if (sel.ids.length === 1) void A.copyAsset(sel.ids[0]!, id => setSel({ ids: [id], anchor: id, focus: id })) })
   useShortcut('mod+o', () => { if (isLocal && sel.ids.length === 1) void A.openWithDefault(sel.ids[0]!) })
   useShortcut('mod+alt+r', () => { if (isLocal && sel.ids.length) void A.revealInFolder(sel.ids) })
-  useShortcut('esc', () => { if (filterOpen) setFilterOpen(false); else if (sel.ids.length) setSel(NO_SELECTION); else return false })
+  useShortcut('esc', () => { if (filterOpen) setFilterOpen(false); else if (sel.ids.length) setSel(NO_SELECTION); else if (!skipTourByEscape()) return false })
 
   /* ── crumbs ── */
   const libName = info.data?.name ?? ''

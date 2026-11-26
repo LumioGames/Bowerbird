@@ -47,7 +47,7 @@ export function SettingsPage() {
       <div className="w2-st">
         <nav className="w2-st__nav" aria-label={t('set.title')}>
           {SECTIONS.map(s => (
-            <button key={s.id} type="button" className="w2-st__n" aria-current={section === s.id ? 'page' : undefined} onClick={() => go(s.id)}>
+            <button key={s.id} type="button" className="w2-st__n" aria-current={section === s.id ? 'page' : undefined} data-onboard={s.id === 'machine' ? 'set.machine' : undefined} onClick={() => go(s.id)}>
               <Icon name={s.icon} size={12} />{t(`set.${s.id}`)}{s.id === 'plugins' && warn && <i className="w2-st__dot" aria-label={t('set.p.attention')} />}
             </button>
           ))}

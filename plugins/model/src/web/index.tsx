@@ -56,7 +56,8 @@ export const modelFormat: FormatView = {
   renderSummary,
   get techLabels() { return techLabels() },
   formatBadge: (badge, locale) => modelBadge(badge, inLocale(locale)),
-  techRows: (asset, locale) => modelTechRows(asset, inLocale(locale))
+  techRows: (asset, locale) => modelTechRows(asset, inLocale(locale)),
+  intro: locale => inLocale(locale)('intro')
 }
 
 export default defineWebPlugin({

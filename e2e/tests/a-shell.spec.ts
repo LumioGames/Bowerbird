@@ -2,7 +2,7 @@
  * pages.md「外壳」: 左栏（资产库菜单、视图与数量、智能文件夹与文件夹的右键）、顶栏、检查器三种形态、浮层（右键菜单与二级菜单、
  * 弹出面板、确认类与表单类对话框、提示条、快速预览）. Text from design/docs/copy.md.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../helpers/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { startBowerbird, type Bowerbird } from '../helpers/a-server'
@@ -51,11 +51,12 @@ test.describe('左栏', () => {
     await expect(grid(page).locator('[data-asset-cell]')).toHaveCount(info.counts.untagged)
   })
 
-  test('底部「设置」「标签」「任务」：三个只有图标的按钮，按名字可点', async ({ page }) => {
+  test('底部「设置」「帮助」「标签」「任务」：四个只有图标的按钮，按名字可点（ADR-064 加了「帮助」）', async ({ page }) => {
     await openBrowse(page, bb)
     const foot = page.getByTestId('side-footer')
-    await expect(foot.getByRole('button')).toHaveCount(3)
+    await expect(foot.getByRole('button')).toHaveCount(4)
     await expect(foot.getByRole('button', { name: '设置' })).toBeVisible()
+    await expect(foot.getByRole('button', { name: '帮助' })).toBeVisible()
     // icons only: no visible words in the footer
     expect((await foot.innerText()).trim()).toBe('')
     await foot.getByRole('button', { name: '设置' }).click()

@@ -320,7 +320,7 @@ function QueueItem(p: {
             <Grow />
             <Btn icon="undo-2" onClick={p.onReject}>{t('rev.rejectMore')}</Btn>
             <Btn icon="skip-forward" onClick={p.onSkip}>{t('rq.skip')} <Kbd>→</Kbd></Btn>
-            <Btn variant="primary" icon="check" disabled={p.busy || !a} onClick={p.onApprove}>{t('rev.approve')} <Kbd>{isMac ? '⌘↵' : 'Ctrl+Enter'}</Kbd></Btn>
+            <Btn variant="primary" icon="check" data-onboard="queue.pass" disabled={p.busy || !a} onClick={p.onApprove}>{t('rev.approve')} <Kbd>{isMac ? '⌘↵' : 'Ctrl+Enter'}</Kbd></Btn>
           </>}
         </div>
       </div>

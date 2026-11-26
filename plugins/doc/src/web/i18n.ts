@@ -6,6 +6,8 @@
 import { defineMessages, pageLocale, translate as lookUp, useMessages } from '@bowerbird/plugin-sdk/web'
 
 const ZH = {
+  // the new-file hint (FormatView.intro, ADR-064)
+  intro: 'Markdown、网页原型、JSON 都能直接看。',
   display: '显示方式', typeset: '排版', raw: '原文', tree: '树形', run: '运行', source: '源码',
   viewport: '视口', 'vp.fit': '适应', 'vp.phone': '手机', 'vp.tablet': '平板', 'vp.desktop': '桌面', viewerError: '查看器出错了',
   targetSize: '目标尺寸', missingTarget: '指向的文件找不到了',
@@ -18,6 +20,7 @@ const ZH = {
 export type Key = keyof typeof ZH
 
 const EN: Record<Key, string> = {
+  intro: 'Markdown, web prototypes and JSON open right here.',
   display: 'Display', typeset: 'Formatted', raw: 'Source', tree: 'Tree', run: 'Run', source: 'Source',
   viewport: 'Viewport', 'vp.fit': 'Fit', 'vp.phone': 'Phone', 'vp.tablet': 'Tablet', 'vp.desktop': 'Desktop', viewerError: 'The viewer failed',
   targetSize: 'Target size', missingTarget: 'Points to a missing file',
@@ -28,6 +31,7 @@ const EN: Record<Key, string> = {
 }
 
 const JA: Record<Key, string> = {
+  intro: 'Markdown、Web プロトタイプ、JSON をそのまま表示できます。',
   display: '表示方法', typeset: '整形表示', raw: '原文', tree: 'ツリー', run: '実行', source: 'ソース',
   viewport: 'ビューポート', 'vp.fit': '全体表示', 'vp.phone': 'スマートフォン', 'vp.tablet': 'タブレット', 'vp.desktop': 'デスクトップ', viewerError: 'ビューアでエラーが発生しました',
   targetSize: '目標サイズ', missingTarget: '参照先のファイルが見つかりません',
@@ -38,6 +42,7 @@ const JA: Record<Key, string> = {
 }
 
 const KO: Record<Key, string> = {
+  intro: 'Markdown, 웹 프로토타입, JSON을 바로 볼 수 있어요.',
   display: '표시 방식', typeset: '서식 보기', raw: '원문', tree: '트리', run: '실행', source: '소스',
   viewport: '뷰포트', 'vp.fit': '맞춤', 'vp.phone': '휴대폰', 'vp.tablet': '태블릿', 'vp.desktop': '데스크톱', viewerError: '뷰어에 오류가 생겼어요',
   targetSize: '목표 크기', missingTarget: '가리키는 파일을 찾을 수 없어요',

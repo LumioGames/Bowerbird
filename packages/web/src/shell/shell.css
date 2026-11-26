@@ -15,6 +15,7 @@
 @keyframes bb-skel { 50% { opacity: 0.45; } }
 @keyframes bb-pulse-row { 30% { background: var(--warning-soft); } }
 @keyframes bb-spin { to { transform: rotate(360deg); } }
+@keyframes bb-coach-tap { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-4px); } }
 
 @layer components {
   /* a light travels the edge while the pipeline works on it (Magic UI "Border Beam", one neutral ink) */
@@ -55,7 +56,29 @@
   .bb-spin { animation: bb-spin 1.2s linear infinite; }
 }
 
+/*
+ * Onboarding hints (onboarding.md「提示的样子」): a ring around what is pointed at, a hand between it and the bubble
+ * tapping towards it. Positions are set from script (fixed to the window); the hand turns to point from the bubble's
+ * side: below the anchor it points up, above it points down, to the right it points left, to the left it points right.
+ */
+@layer components {
+  .bb-coach-ring {
+    position: fixed; top: 0; left: 0; z-index: 39; pointer-events: none; border-radius: var(--radius-md);
+    box-shadow: 0 0 0 2px var(--accent-ring), 0 0 0 6px color-mix(in srgb, var(--accent-ring) 18%, transparent);
+    animation: bb-fade var(--duration-fade) var(--ease-out) both;
+  }
+  .bb-coach-hand { position: fixed; top: 0; left: 0; z-index: 41; pointer-events: none; color: var(--accent-ink); }
+  .bb-coach-hand svg { fill: var(--surface-raised); filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35)); }
+  .bb-coach-dir, .bb-coach-tap { display: grid; place-items: center; width: 100%; height: 100%; }
+  .bb-coach-hand[data-side="top"] .bb-coach-dir { transform: rotate(180deg); }
+  .bb-coach-hand[data-side="right"] .bb-coach-dir { transform: rotate(-90deg); }
+  .bb-coach-hand[data-side="left"] .bb-coach-dir { transform: rotate(90deg); }
+  .bb-coach-tap { animation: bb-coach-tap 1.1s var(--ease-out) infinite; }
+  .bb-coach { animation: bb-fade var(--duration-fade) var(--ease-out) both; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .bb-coach-tap { animation: none; }
   .bb-beam { animation: none; background: var(--ink-3); }
   .bb-arrive { animation: bb-fade var(--duration-fade) ease both; }
   .bb-spin { animation: none; }

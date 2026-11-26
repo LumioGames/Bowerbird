@@ -2,7 +2,7 @@
  * pages.md 浏览页「上传」与外壳的操作流程: 上传（目标可改、继承的默认值、拖入文件夹保留结构、同名的三种选择与
  * 「对其余同名文件同样处理」、进度面板的取消 / 失败 / 重试）、导出对话框、复制、移动遇到同名、删除被引用的资产.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '../helpers/test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'

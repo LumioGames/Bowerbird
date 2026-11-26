@@ -1,0 +1,71 @@
+{
+  "name": "@bowerbird/plugin-video",
+  "version": "0.1.0",
+  "description": "MP4, WebM, MOV: probe, browser thumbnails (poster, scrub), viewer, compare",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/video"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.video",
+    "displayName": "视频",
+    "description": "MP4、WebM、MOV：读取信息、浏览器缩略图（封面、拖动预览）、查看器、对比",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "formats": [
+        {
+          "id": "video",
+          "displayName": "视频",
+          "extensions": [
+            ".mp4",
+            ".webm",
+            ".mov",
+            ".m4v"
+          ],
+          "priority": 100,
+          "thumbnail": "browser"
+        }
+      ]
+    },
+    "l10n": {
+      "en": {
+        "视频": "Video",
+        "MP4、WebM、MOV：读取信息、浏览器缩略图（封面、拖动预览）、查看器、对比": "MP4, WebM, MOV: probe, browser thumbnails (poster, scrub), viewer, compare"
+      },
+      "ja": {
+        "视频": "動画",
+        "MP4、WebM、MOV：读取信息、浏览器缩略图（封面、拖动预览）、查看器、对比": "MP4、WebM、MOV：情報の読み取り、ブラウザ側のサムネイル（ポスター、スクラブ）、ビューア、比較"
+      },
+      "ko": {
+        "视频": "동영상",
+        "MP4、WebM、MOV：读取信息、浏览器缩略图（封面、拖动预览）、查看器、对比": "MP4, WebM, MOV: 정보 읽기, 브라우저 썸네일(포스터, 스크럽), 뷰어, 비교"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@types/react": "19.3.2",
+    "lucide-react": "1.80.0",
+    "react": "19.2.9"
+  }
+}

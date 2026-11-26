@@ -1,0 +1,27 @@
+<title>Bowerbird 原型</title>
+<link rel="stylesheet" href="bb/tokens.css">
+<link rel="stylesheet" href="bb/bundle.css">
+<link rel="stylesheet" href="app.css">
+<div id="app" class="bb-shell bb-shell--bar">
+  <aside class="bb-shell__side" aria-label="导航"><div class="bb-shell__scroll" id="side"></div></aside>
+  <div class="bb-toolbar" role="toolbar" aria-label="顶栏" id="bar"></div>
+  <div class="bb-toolbar" role="toolbar" aria-label="详情" id="dbar" hidden></div>
+  <main class="bb-shell__main" id="main"><div id="filter" hidden></div><div id="content"></div></main>
+  <section id="detail" aria-label="详情" hidden></section>
+  <aside class="bb-shell__insp" aria-label="检查器"><div class="bb-shell__scroll" id="insp"></div></aside>
+  <div class="bb-resizer bb-resizer--side" data-edge="side" role="separator" aria-label="调整左栏宽度"></div>
+  <div class="bb-resizer bb-resizer--insp" data-edge="insp" role="separator" aria-label="调整检查器宽度"></div>
+  <div id="layer"></div>
+</div>
+<script src="bb/bundle.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="flows.js"></script>
+<script src="viewers.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="model.js"></script>
+<script src="graph.js"></script>
+<script src="compare.js"></script>
+<script src="detail.js"></script>
+<script src="pages.js"></script>
+<script src="plugin-demo.js"></script>

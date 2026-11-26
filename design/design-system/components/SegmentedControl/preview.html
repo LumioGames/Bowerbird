@@ -1,0 +1,24 @@
+<!-- @dsCard group="操作" height=120 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>SegmentedControl — preview</title>
+<style>
+  body { padding: var(--space-5); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+  #out { color: var(--ink-3); font-size: 11px; width: 100%; }
+</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var I = Bowerbird.icon;
+  function seg(label, items) {
+    return '<div class="bb-seg" role="radiogroup" aria-label="' + label + '"><i class="bb-seg__thumb"></i>' + items.map(function (it, n) {
+      return '<button class="bb-seg__item" role="radio" aria-checked="' + (n === 1) + '" data-value="' + it[1] + '"' + (it[2] ? '' : ' aria-label="' + it[1] + '" title="' + it[1] + '"') + '>' + (it[0] ? I(it[0]) : '') + (it[2] ? it[1] : '') + '</button>';
+    }).join('') + '</div>';
+  }
+  document.getElementById('root').outerHTML =
+    seg('布局', [['layout-dashboard', '瀑布流'], ['layout-grid', '等高网格'], ['list', '列表']]) +
+    seg('对比模式', [['columns-2', '并排', 1], ['square-split-horizontal', '卷帘', 1], ['blend', '叠加', 1]]) +
+    seg('主题', [[null, '跟随系统', 1], [null, '深色', 1], [null, '浅色', 1]]);
+</script>
+</body>
+</html>

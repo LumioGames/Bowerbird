@@ -1,0 +1,75 @@
+{
+  "name": "@bowerbird/plugin-sdk",
+  "version": "0.1.0",
+  "description": "Bowerbird plugin interfaces, shared UI components and theme, and test kit (the build helper is @bowerbird/plugin-build)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "default": "./dist/web.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
+    "./theme.css": "./src/web/styles/theme.css",
+    "./tokens.css": "./src/web/styles/tokens.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src/web/styles",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "gen:tokens": "node scripts/gen-tokens.mjs",
+    "build": "tsc -b && node build/bundle-sdk-web.mjs",
+    "typecheck": "tsc -b",
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "19.3.2",
+    "@types/react-dom": "19.3.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.80.0",
+    "motion": "14.14.0",
+    "radix-ui": "1.8.1",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "sonner": "2.0.8",
+    "tailwind-merge": "3.7.1"
+  }
+}

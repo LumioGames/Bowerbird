@@ -1,0 +1,26 @@
+# Dependencies and build output are produced inside the image.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.DS_Store
+
+# Not needed to build or run the server (workspace package.json files of e2e/ and fixtures/ stay for pnpm).
+.git
+.claude
+.workflow-drafts
+.spec
+.preview
+.tmp
+coverage
+test-results
+playwright-report
+e2e/.artifacts
+fixtures/perf-100k
+fixtures/xingluo
+Dockerfile
+.dockerignore
+
+# Staged copies made when packing the bowerbird package (the image runs from the workspace build).
+packages/bowerbird/plugins
+packages/bowerbird/web
+**/*.tgz

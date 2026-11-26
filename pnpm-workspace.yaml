@@ -1,0 +1,11 @@
+packages:
+  - packages/*
+  - plugins/*
+  - fixtures
+  - fixtures/plugins/*
+  - e2e
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+  - sharp
+  - '@tailwindcss/oxide'

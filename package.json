@@ -1,0 +1,39 @@
+{
+  "name": "bowerbird-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bowerbird \u2014 a web-based game asset manager",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/**\" --filter \"./plugins/**\" --filter \"./fixtures/plugins/**\" run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "node scripts/ensure-fixtures.mjs && vitest run --project node --project web && vitest run --project bench --no-file-parallelism",
+    "test:watch": "vitest",
+    "e2e": "node scripts/ensure-fixtures.mjs && playwright test -c e2e/playwright.config.ts",
+    "fixtures": "node scripts/ensure-fixtures.mjs --force",
+    "perf": "pnpm --filter @bowerbird/fixtures run perf",
+    "serve:xingluo": "node scripts/ensure-fixtures.mjs && node fixtures/scripts/copy-library.mjs .tmp/xingluo --rebase-trash --force && node packages/cli/dist/index.js serve .tmp/xingluo",
+    "notices": "node scripts/third-party-notices.mjs",
+    "test:bench": "vitest run --project bench --no-file-parallelism"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
+    "@playwright/test": "1.57.0",
+    "@types/node": "22.20.7",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "@tailwindcss/oxide"
+    ]
+  }
+}

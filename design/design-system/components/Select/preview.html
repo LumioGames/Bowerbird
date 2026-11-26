@@ -1,0 +1,38 @@
+<!-- @dsCard group="输入" height=280 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Select — preview</title>
+<style>
+  body { padding: var(--space-5); }
+  .pv { display: flex; gap: var(--space-4); align-items: flex-start; }
+  .slot { position: relative; }
+  .slot .bb-menu { position: absolute; top: calc(100% + var(--space-1)); left: 0; z-index: 2; }
+</style></head>
+<body>
+<div class="pv" id="root"></div>
+<script>
+  var B = Bowerbird, I = B.icon, H = B.html;
+  var defs = [
+    { label: '排序', value: 1, items: [['名称'], ['修改时间'], ['入库时间'], ['大小'], ['格式']], open: true },
+    { label: '阶段', value: 1, items: [[H.stage('reference', 'full'), '1'], [H.stage('production', 'full'), '2'], [H.stage('runtime', 'full'), '3']] }
+  ];
+  function render() {
+    document.getElementById('root').innerHTML = defs.map(function (d, n) {
+      var menu = d.open ? '<div class="bb-menu" role="listbox" data-open>' + d.items.map(function (it, i) {
+        return '<button class="bb-menu__item" role="option" aria-selected="' + (i === d.value) + '" data-s="' + n + '" data-i="' + i + '"><span class="bb-menu__check">' + (i === d.value ? I('check') : '') + '</span>' + it[0] + (it[1] ? '<span class="bb-menu__kbd">' + it[1] + '</span>' : '') + '</button>';
+      }).join('') + '</div>' : '';
+      return '<div class="slot"><button class="bb-select" aria-haspopup="listbox" aria-expanded="' + !!d.open + '" data-s="' + n + '"><span class="bb-select__label">' + d.label + '</span>' + d.items[d.value][0] + I('chevron-down', 'bb-icon--12') + '</button>' + menu + '</div>';
+    }).join('');
+  }
+  render();
+  document.addEventListener('click', function (e) {
+    var it = e.target.closest('.bb-menu__item'), tr = e.target.closest('.bb-select');
+    if (it) { var d = defs[+it.dataset.s]; d.value = +it.dataset.i; d.open = false; }
+    else if (tr) { var n = +tr.dataset.s; defs.forEach(function (d, i) { d.open = i === n ? !d.open : false; }); }
+    else defs.forEach(function (d) { d.open = false; });
+    render();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { defs.forEach(function (d) { d.open = false; }); render(); } });
+</script>
+</body>
+</html>

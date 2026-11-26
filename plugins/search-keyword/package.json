@@ -1,0 +1,59 @@
+{
+  "name": "@bowerbird/plugin-search-keyword",
+  "version": "0.1.1",
+  "description": "Keyword search over SQLite FTS5 (trigram), with hit snippets",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/search-keyword"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.search-keyword",
+    "displayName": "关键词搜索",
+    "description": "基于 SQLite FTS5（三元组）的关键词搜索，带命中片段",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "contributes": {
+      "searchProviders": [
+        {
+          "id": "keyword"
+        }
+      ]
+    },
+    "l10n": {
+      "en": {
+        "关键词搜索": "Keyword search",
+        "基于 SQLite FTS5（三元组）的关键词搜索，带命中片段": "Keyword search over SQLite FTS5 (trigram), with hit snippets"
+      },
+      "ja": {
+        "关键词搜索": "キーワード検索",
+        "基于 SQLite FTS5（三元组）的关键词搜索，带命中片段": "SQLite FTS5（トライグラム）によるキーワード検索（ヒット箇所の抜粋付き）"
+      },
+      "ko": {
+        "关键词搜索": "키워드 검색",
+        "基于 SQLite FTS5（三元组）的关键词搜索，带命中片段": "SQLite FTS5(트라이그램) 기반 키워드 검색, 일치 부분 발췌 포함"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "better-sqlite3": "12.11.1"
+  },
+  "devDependencies": {
+    "@bowerbird/schema": "workspace:*",
+    "@types/better-sqlite3": "9.6.0"
+  }
+}

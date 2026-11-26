@@ -1,0 +1,38 @@
+{
+  "name": "@bowerbird/mcp",
+  "version": "0.1.0",
+  "description": "Bowerbird MCP server: a thin wrapper over the HTTP API",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/schema": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  }
+}

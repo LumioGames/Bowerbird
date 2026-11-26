@@ -1,0 +1,4 @@
+# Staged by scripts/stage.mjs at pack time (copies of plugins/*/dist and packages/web/dist).
+plugins/
+web/
+*.tgz

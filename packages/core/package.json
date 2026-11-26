@@ -1,0 +1,43 @@
+{
+  "name": "@bowerbird/core",
+  "version": "0.1.0",
+  "description": "Bowerbird kernel: library I/O, scanning and reconciliation, relations and integrity, pipeline, index and query, plugin host",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "better-sqlite3": "12.11.1",
+    "ignore": "7.0.17",
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0"
+  }
+}

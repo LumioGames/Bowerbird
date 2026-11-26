@@ -1,0 +1,15 @@
+{
+  "name": "@bowerbird/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end tests against `bb serve` on a copy of fixtures/xingluo",
+  "dependencies": {
+    "@axe-core/playwright": "4.11.3",
+    "@bowerbird/schema": "workspace:*",
+    "@playwright/test": "1.57.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

@@ -1,0 +1,140 @@
+/*
+ * Bowerbird theme for Tailwind v4 + shadcn/ui (ADR-021).
+ * The design-system variables (tokens.css, generated) are the values; this file only maps them onto
+ * Tailwind's theme namespaces and shadcn's variable names. The shell and every plugin use this file.
+ *
+ * Usage (shell):   @import "tailwindcss"; @import "@bowerbird/plugin-sdk/theme.css";
+ * Usage (plugin):  handled by the plugin build helper (utilities only, theme as reference).
+ */
+@import "./tokens.css";
+
+/* `dark:` follows the resolved theme: explicit [data-theme], else the system preference (default dark). */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media not (prefers-color-scheme: light) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  /* design-system colours */
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-well: var(--surface-well);
+  --color-fill-rest: var(--fill-rest);
+  --color-fill-hover: var(--fill-hover);
+  --color-fill-press: var(--fill-press);
+  --color-fill-thumb: var(--fill-thumb);
+  --color-fill-knob: var(--fill-knob);
+  --color-line-hairline: var(--line-hairline);
+  --color-line-control: var(--line-control);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-disabled: var(--ink-disabled);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-on: var(--accent-on);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--accent-ring);
+  --color-warning-ink: var(--warning-ink);
+  --color-warning-fill: var(--warning-fill);
+  --color-warning-on: var(--warning-on);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger-ink: var(--danger-ink);
+  --color-danger-fill: var(--danger-fill);
+  --color-danger-on: var(--danger-on);
+  --color-danger-soft: var(--danger-soft);
+  --color-stage-reference: var(--stage-reference);
+  --color-stage-production: var(--stage-production);
+  --color-stage-runtime: var(--stage-runtime);
+  --color-material-chrome: var(--material-chrome);
+  --color-material-popover: var(--material-popover);
+  --color-material-mark: var(--material-mark);
+  --color-material-edge: var(--material-edge);
+  --color-material-scrim: var(--material-scrim);
+  --color-checker-a: var(--checker-a);
+  --color-checker-b: var(--checker-b);
+
+  /* shadcn/ui names → design-system values */
+  --color-background: var(--surface-canvas);
+  --color-foreground: var(--ink-1);
+  --color-card: var(--surface-raised);
+  --color-card-foreground: var(--ink-1);
+  --color-popover: var(--material-popover);
+  --color-popover-foreground: var(--ink-1);
+  --color-primary: var(--accent-fill);
+  --color-primary-foreground: var(--accent-on);
+  --color-secondary: var(--fill-rest);
+  --color-secondary-foreground: var(--ink-1);
+  --color-muted: var(--fill-rest);
+  --color-muted-foreground: var(--ink-3);
+  --color-accent: var(--fill-hover);
+  --color-accent-foreground: var(--ink-1);
+  --color-destructive: var(--danger-fill);
+  --color-destructive-foreground: var(--danger-on);
+  --color-border: var(--line-hairline);
+  --color-input: var(--fill-rest);
+  --color-ring: var(--accent-ring);
+
+  /* sizes from the design system */
+  --width-sidebar: var(--size-sidebar);
+  --width-inspector: var(--size-inspector);
+  --height-toolbar: var(--size-toolbar);
+  --height-control: var(--size-control);
+  --height-control-lg: var(--size-control-lg);
+}
+
+/* Radii keep the design-system names (tokens.css defines --radius-xs … --radius-full, overriding Tailwind's defaults). */
+
+/* Shadows, blur and motion as utilities that read the themed variables directly. */
+@utility shadow-raise { box-shadow: var(--shadow-raise); }
+@utility shadow-popover { box-shadow: var(--shadow-popover); }
+@utility shadow-dialog { box-shadow: var(--shadow-dialog); }
+@utility shadow-drag { box-shadow: var(--shadow-drag); }
+@utility backdrop-chrome { backdrop-filter: blur(var(--blur-chrome)) saturate(1.6); -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(1.6); }
+@utility backdrop-popover { backdrop-filter: blur(var(--blur-popover)) saturate(1.8); -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(1.8); }
+@utility duration-press { transition-duration: var(--duration-press); }
+@utility duration-fade { transition-duration: var(--duration-fade); }
+@utility duration-arrive { transition-duration: var(--duration-arrive); }
+@utility duration-snappy { transition-duration: var(--duration-snappy); }
+@utility duration-settle { transition-duration: var(--duration-settle); }
+@utility duration-flick { transition-duration: var(--duration-flick); }
+@utility ease-out-bb { transition-timing-function: var(--ease-out); }
+@utility ease-settle { transition-timing-function: var(--spring-settle); }
+@utility ease-flick { transition-timing-function: var(--spring-flick); }
+@utility checkerboard {
+  background-color: var(--checker-a);
+  background-image: linear-gradient(45deg, var(--checker-b) 25%, transparent 25%), linear-gradient(-45deg, var(--checker-b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checker-b) 75%), linear-gradient(-45deg, transparent 75%, var(--checker-b) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Accessibility preferences (design-system bundle.css): gentler motion, solid materials, stronger outlines. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: var(--duration-fade) !important; transition-timing-function: ease !important; animation-duration: var(--duration-fade) !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bb-material { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: var(--surface-raised) !important; }
+}
+
+/*
+ * Han characters in the regional forms of the UI language (ADR-061). tokens.css gives the Chinese stack; Japanese
+ * and Korean put their own system fonts first. Latin text keeps the system UI font in every language.
+ */
+:root:lang(ja) {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Segoe UI", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Hiragino Sans", monospace;
+}
+:root:lang(ko) {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans CJK KR", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Apple SD Gothic Neo", monospace;
+}
+/* Korean wraps between words, not inside them (CJK default breaks at any syllable); long names still wrap. */
+:root:lang(ko) body { word-break: keep-all; overflow-wrap: break-word; }

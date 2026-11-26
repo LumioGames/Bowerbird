@@ -1,0 +1,40 @@
+<!-- @dsCard group="操作" height=176 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Button — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; gap: var(--space-4); }
+  .pv { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .pv > small { width: 64px; color: var(--ink-3); font-size: 11px; }
+</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var I = Bowerbird.icon;
+  document.getElementById('root').outerHTML =
+    '<div class="pv"><small>层级</small>' +
+      '<button class="bb-btn bb-btn--primary">' + I('upload') + '上传</button>' +
+      '<button class="bb-btn">' + I('refresh-cw') + '重新扫描</button>' +
+      '<button class="bb-btn bb-btn--ghost">取消</button>' +
+      '<button class="bb-btn bb-btn--danger">' + I('trash-2') + '移入回收站</button>' +
+      '<button class="bb-btn" disabled>对比上游的变化</button></div>' +
+    '<div class="pv"><small>尺寸</small>' +
+      '<button class="bb-btn bb-btn--sm">确认已复核</button>' +
+      '<button class="bb-btn">确认已复核</button>' +
+      '<button class="bb-btn bb-btn--lg bb-btn--primary">' + I('check') + '通过 <kbd class="bb-kbd" style="background:rgba(255,255,255,.18);color:inherit;box-shadow:none">A</kbd></button>' +
+      '<button class="bb-btn bb-btn--lg">' + I('undo-2') + '打回</button>' +
+      '<button class="bb-btn bb-btn--lg bb-btn--ghost">' + I('skip-forward') + '跳过</button></div>' +
+    '<div class="pv"><small>图标</small>' +
+      '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="后退">' + I('chevron-left') + '</button>' +
+      '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="前进" disabled>' + I('chevron-right') + '</button>' +
+      '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="筛选" aria-pressed="true" data-toggle>' + I('list-filter') + '</button>' +
+      '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="左栏" aria-pressed="true" data-toggle>' + I('panel-left') + '</button>' +
+      '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="检查器" aria-pressed="false" data-toggle>' + I('panel-right') + '</button>' +
+      '<button class="bb-btn bb-btn--icon" aria-label="更多">' + I('ellipsis') + '</button></div>';
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-toggle]');
+    if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  });
+</script>
+</body>
+</html>

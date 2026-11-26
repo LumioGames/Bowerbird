@@ -1,0 +1,36 @@
+<!-- @dsCard group="输入" height=250 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>TextField — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-5) var(--space-6); align-items: start; }
+  .col { display: grid; gap: var(--space-4); }
+</style></head>
+<body>
+<div class="col" id="a"></div>
+<div class="col" id="b"></div>
+<script>
+  var B = Bowerbird, I = B.icon;
+  function cond(k, v) { return '<span class="bb-cond"><span class="bb-cond__key">' + k + ':</span>' + v + '<button class="bb-cond__x" aria-label="移除条件 ' + k + ':' + v + '">' + I('x', 'bb-icon--12') + '</button></span>'; }
+  document.getElementById('a').innerHTML =
+    '<div><label class="bb-label">搜索</label>' +
+      '<div class="bb-field" id="search">' + I('search') + cond('stage', 'runtime') + cond('format', 'model') + cond('-tag', '废弃') +
+      '<input class="bb-field__input" value="宝箱" placeholder="搜索" aria-label="搜索">' + B.html.kbd('⌘ F') + '</div></div>' +
+    '<div><label class="bb-label">名称</label><div class="bb-field"><input class="bb-field__input" value="chest_icon.png" aria-label="名称"></div></div>';
+  document.getElementById('b').innerHTML =
+    '<div><label class="bb-label">打回意见</label><div class="bb-field bb-field--area" data-invalid><textarea class="bb-field__input" rows="3" placeholder="写清楚哪里不对，对方才知道怎么改" aria-label="打回意见"></textarea></div>' +
+      '<div class="bb-hint" data-level="error">打回必须填写意见。</div></div>' +
+    '<div><label class="bb-label">监听地址（只读）</label><div class="bb-field" data-disabled><input class="bb-field__input text-mono" value="127.0.0.1:4780" disabled aria-label="监听地址"></div></div>';
+  var field = document.getElementById('search'), input = field.querySelector('input');
+  input.addEventListener('keydown', function (e) {
+    if (e.key === ' ') {
+      var m = /(^|\s)(-?[a-z]+):(\S+)$/i.exec(input.value);
+      if (m) { e.preventDefault(); input.insertAdjacentHTML('beforebegin', cond(m[2], m[3].replace(/</g, '&lt;'))); input.value = input.value.slice(0, m.index); }
+    } else if (e.key === 'Backspace' && input.selectionStart === 0 && input.selectionEnd === 0) {
+      var last = input.previousElementSibling; if (last && last.classList.contains('bb-cond')) last.remove();
+    }
+  });
+  field.addEventListener('click', function (e) { var x = e.target.closest('.bb-cond__x'); if (x) x.parentElement.remove(); else input.focus(); });
+</script>
+</body>
+</html>

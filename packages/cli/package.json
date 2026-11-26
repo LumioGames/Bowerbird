@@ -1,0 +1,44 @@
+{
+  "name": "@bowerbird/cli",
+  "version": "0.1.0",
+  "description": "bb — the Bowerbird command line",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    "./main": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/core": "workspace:*",
+    "@bowerbird/mcp": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@bowerbird/server": "workspace:*",
+    "commander": "14.0.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}

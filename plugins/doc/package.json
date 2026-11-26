@@ -1,0 +1,75 @@
+{
+  "name": "@bowerbird/plugin-doc",
+  "version": "0.1.0",
+  "description": "Markdown, HTML, TXT, JSON: probe (title, target size), text cells, viewers, text diff",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/doc"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.doc",
+    "displayName": "文档",
+    "description": "Markdown、HTML、TXT、JSON：读取信息（标题、目标尺寸）、文本单元格、查看器、文本差异",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "formats": [
+        {
+          "id": "doc",
+          "displayName": "文档",
+          "extensions": [
+            ".md",
+            ".markdown",
+            ".html",
+            ".htm",
+            ".txt",
+            ".json"
+          ],
+          "priority": 100,
+          "thumbnail": "none"
+        }
+      ]
+    },
+    "l10n": {
+      "en": {
+        "文档": "Document",
+        "Markdown、HTML、TXT、JSON：读取信息（标题、目标尺寸）、文本单元格、查看器、文本差异": "Markdown, HTML, TXT, JSON: probe (title, target size), text cells, viewers, text diff"
+      },
+      "ja": {
+        "文档": "ドキュメント",
+        "Markdown、HTML、TXT、JSON：读取信息（标题、目标尺寸）、文本单元格、查看器、文本差异": "Markdown、HTML、TXT、JSON：情報の読み取り（タイトル、目標サイズ）、テキストセル、ビューア、テキスト差分"
+      },
+      "ko": {
+        "文档": "문서",
+        "Markdown、HTML、TXT、JSON：读取信息（标题、目标尺寸）、文本单元格、查看器、文本差异": "Markdown, HTML, TXT, JSON: 정보 읽기(제목, 목표 크기), 텍스트 셀, 뷰어, 텍스트 차이"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "@bowerbird/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@types/markdown-it": "14.1.2",
+    "@types/react": "19.3.2",
+    "lucide-react": "1.80.0",
+    "markdown-it": "14.3.3",
+    "react": "19.2.9"
+  }
+}

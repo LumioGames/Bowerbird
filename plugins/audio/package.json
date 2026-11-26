@@ -1,0 +1,76 @@
+{
+  "name": "@bowerbird/plugin-audio",
+  "version": "0.1.0",
+  "description": "WAV, MP3, OGG, FLAC: probe, waveform peaks, viewer, compare",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/audio"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.audio",
+    "displayName": "音频",
+    "description": "WAV、MP3、OGG、FLAC：读取信息、波形峰值、查看器、对比",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "formats": [
+        {
+          "id": "audio",
+          "displayName": "音频",
+          "extensions": [
+            ".wav",
+            ".mp3",
+            ".ogg",
+            ".flac"
+          ],
+          "priority": 100,
+          "thumbnail": "server"
+        }
+      ]
+    },
+    "l10n": {
+      "en": {
+        "音频": "Audio",
+        "WAV、MP3、OGG、FLAC：读取信息、波形峰值、查看器、对比": "WAV, MP3, OGG, FLAC: probe, waveform peaks, viewer, compare"
+      },
+      "ja": {
+        "音频": "音声",
+        "WAV、MP3、OGG、FLAC：读取信息、波形峰值、查看器、对比": "WAV、MP3、OGG、FLAC：情報の読み取り、波形ピーク、ビューア、比較"
+      },
+      "ko": {
+        "音频": "오디오",
+        "WAV、MP3、OGG、FLAC：读取信息、波形峰值、查看器、对比": "WAV, MP3, OGG, FLAC: 정보 읽기, 파형 피크, 뷰어, 비교"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "@wasm-audio-decoders/flac": "0.2.11",
+    "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
+    "mpg123-decoder": "1.0.3",
+    "ogg-opus-decoder": "1.6.16",
+    "sharp": "0.34.5"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@types/react": "19.3.2",
+    "lucide-react": "1.80.0",
+    "react": "19.2.9"
+  }
+}

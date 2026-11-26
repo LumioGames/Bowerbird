@@ -1,0 +1,2 @@
+# written by a server that serves the committed fixture in place (tests should copy it first: scripts/copy-library.mjs)
+xingluo/.bowerbird/cache/

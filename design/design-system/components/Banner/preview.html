@@ -1,0 +1,31 @@
+<!-- @dsCard group="反馈" height=330 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Banner — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: var(--space-4) var(--space-6); align-items: start; }
+  .col { display: grid; gap: var(--space-3); }
+</style></head>
+<body>
+<div class="col" id="a"></div>
+<div class="col" id="b"></div>
+<script>
+  var I = Bowerbird.icon;
+  function banner(kind, ic, title, text, actions, line) {
+    return '<div class="bb-banner' + (kind ? ' bb-banner--' + kind : '') + (line ? ' bb-banner--line' : '') + '" role="' + (kind === 'danger' ? 'alert' : 'status') + '">' + I(ic) + '<div class="bb-banner__body"><div class="bb-banner__title">' + title + '</div>' + (text ? '<div class="bb-banner__text">' + text + '</div>' : '') + (actions ? '<div class="bb-banner__actions">' + actions + '</div>' : '') + '</div></div>';
+  }
+  document.getElementById('a').innerHTML =
+    banner('warning', 'circle-arrow-up', '上游已更新，待复核', 'chest.glb 在 11 月 24 日被 user:lin 改过（修正包边比例）。这张 Icon 是照改动之前的模型渲染的。',
+      '<button class="bb-btn bb-btn--sm bb-btn--primary" id="ok">确认已复核</button><button class="bb-btn bb-btn--sm">替换本资产内容</button><button class="bb-btn bb-btn--sm" disabled title="需要先安装版本插件">对比上游的变化</button>') +
+    '<div class="bb-hint">「对比上游的变化」需要版本插件，本机还没有安装。</div>';
+  document.getElementById('b').innerHTML =
+    banner('danger', 'unlink', '有 1 条引用断了', 'potion.glb 引用的贴图 potion_basecolor.png 已经不在资产库里。', '<button class="bb-btn bb-btn--sm">重新指定贴图</button><button class="bb-btn bb-btn--sm">从回收站恢复</button><button class="bb-btn bb-btn--sm">删除这条引用</button>') +
+    banner('', 'info', '副本已获得新的身份', 'chest.glb 的引用仍然指向原件，不会自动跟到副本。', '<button class="bb-btn bb-btn--sm">把引用改指到副本…</button>') +
+    banner('', 'puzzle', '旧版本不能预览', '', '<button class="bb-btn bb-btn--sm">了解版本插件</button>', true);
+  document.getElementById('ok').addEventListener('click', function () {
+    var el = this.closest('.bb-banner'); el.className = 'bb-banner bb-banner--line';
+    el.innerHTML = I('check') + '<div class="bb-banner__body"><div class="bb-banner__title">已复核</div><div class="bb-banner__text">标记已清除，来源关系记下了上游的当前版本。</div></div>';
+  });
+</script>
+</body>
+</html>

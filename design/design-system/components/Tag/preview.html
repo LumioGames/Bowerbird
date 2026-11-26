@@ -1,0 +1,29 @@
+<!-- @dsCard group="资产标记" height=170 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Tag — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; gap: var(--space-3); max-width: 560px; }
+  small { color: var(--ink-3); font-size: 11px; }
+</style></head>
+<body>
+<div class="bb-tags" id="tags"></div>
+<small id="log">chest.glb · 2 个人工标签，3 个 AI 标签待处理</small>
+<script>
+  var H = Bowerbird.html;
+  var human = [['宝箱', '#d898e8'], ['道具', null]], ai = ['低多边形', '木质', '黄铜包边'];
+  function render() {
+    document.getElementById('tags').innerHTML = human.map(function (t) { return H.tag(t[0], { color: t[1], removable: true }); }).join('') + ai.map(function (t) { return H.tag(t, { ai: true }); }).join('') + '<span class="bb-tag bb-tag--add">添加标签 ' + H.kbd('T') + '</span>';
+    document.getElementById('log').textContent = 'chest.glb · ' + human.length + ' 个人工标签' + (ai.length ? '，' + ai.length + ' 个 AI 标签待处理' : '，AI 标签已处理完');
+  }
+  render();
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.bb-tag__act'); if (!b) return;
+    var tag = b.closest('.bb-tag'), name = tag.querySelector('span').textContent;
+    if (tag.classList.contains('bb-tag--ai')) { ai = ai.filter(function (t) { return t !== name; }); if (b.dataset.act === 'adopt') human.push([name, null]); }
+    else human = human.filter(function (t) { return t[0] !== name; });
+    render();
+  });
+</script>
+</body>
+</html>

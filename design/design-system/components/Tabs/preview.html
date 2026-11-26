@@ -1,0 +1,23 @@
+<!-- @dsCard group="导航" height=120 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Tabs — preview</title>
+<style>
+  body { padding: var(--space-3) var(--space-5) var(--space-5); }
+  #panel { padding-top: var(--space-4); color: var(--ink-2); }
+</style></head>
+<body>
+<div id="root"></div>
+<div id="panel"></div>
+<script>
+  var B = Bowerbird, I = B.icon;
+  var tabs = [['查看', null, '查看器：由格式插件提供的独立模块。'], ['关系', 9, '关系图：上游两层、下游两层。'], ['版本', 2, '版本时间线：agent:modeler 的「初版」，user:lin 的「修正包边比例」。'], ['校验', null, '规则检查结果与人工校验记录。'], ['四视图对照', null, '这个页签由插件添加。', 1]];
+  document.getElementById('root').outerHTML = '<div class="bb-tabs" role="tablist"><i class="bb-tabs__bar"></i>' + tabs.map(function (t, n) {
+    return '<button class="bb-tab' + (t[3] ? ' bb-tab--plugin' : '') + '" role="tab" aria-selected="' + (n === 0) + '" data-value="' + n + '">' + (t[3] ? I('puzzle', 'bb-icon--12') : '') + t[0] + (t[1] ? '<span class="bb-tab__count">' + t[1] + '</span>' : '') + '</button>';
+  }).join('') + '</div>';
+  var panel = document.getElementById('panel'); panel.textContent = tabs[0][2];
+  document.querySelector('.bb-tabs').setAttribute('data-wired', '');
+  B.tabs(document.querySelector('.bb-tabs'), function (v) { panel.textContent = tabs[+v][2]; });
+</script>
+</body>
+</html>

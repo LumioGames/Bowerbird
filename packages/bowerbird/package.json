@@ -1,0 +1,54 @@
+{
+  "name": "bowerbird",
+  "version": "0.1.0",
+  "description": "Bowerbird — a web-based game asset manager: server, web shell, command line (bb), MCP and the six built-in plugins",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/bowerbird"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "keywords": [
+    "game assets",
+    "asset manager",
+    "digital asset management",
+    "mcp",
+    "gltf",
+    "fbx"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "bin": {
+    "bb": "bin/bb.js",
+    "bowerbird": "bin/bb.js"
+  },
+  "files": [
+    "bin",
+    "plugins",
+    "web",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "prepack": "node scripts/stage.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/cli": "workspace:*",
+    "@bowerbird/core": "workspace:*",
+    "@bowerbird/mcp": "workspace:*",
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@bowerbird/server": "workspace:*",
+    "@wasm-audio-decoders/flac": "0.2.11",
+    "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
+    "better-sqlite3": "12.11.1",
+    "mpg123-decoder": "1.0.3",
+    "ogg-opus-decoder": "1.6.16",
+    "sharp": "0.34.5"
+  }
+}

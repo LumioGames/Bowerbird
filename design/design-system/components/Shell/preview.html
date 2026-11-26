@@ -1,0 +1,109 @@
+<!-- @dsCard group="框架" height=900 width=1440 page subtitle="三栏外壳：左栏 · 顶栏 · 内容区 · 检查器" -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Shell — preview</title>
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+  #shell { height: 100%; min-height: 900px; }
+  #grid { padding: var(--space-3) var(--space-5) var(--space-12); }
+  .jobs { gap: var(--space-1); font-variant-numeric: tabular-nums; }
+  .jobs .ring { width: 14px; height: 14px; transform: rotate(-90deg); }
+  .jobs .ring circle { fill: none; stroke-width: 2.5; }
+  .bb-toolbar .bb-field { width: 264px; flex: none; }
+  .folder-head { padding: var(--space-4) var(--space-4) var(--space-2); }
+  .folder-head b { display: block; font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .folder-head span { color: var(--ink-2); font-size: 12px; }
+  /* dimension notes — documentation, not product UI */
+  .anno { position: absolute; z-index: 9; pointer-events: none; display: none; }
+  #shell[data-anno] .anno { display: block; }
+  .anno i { position: absolute; inset: 0; border: 1px dashed var(--line-control); border-radius: var(--radius-sm); }
+  .anno span { position: absolute; left: 50%; bottom: var(--space-4); transform: translateX(-50%); padding: var(--space-1h) var(--space-3); border-radius: var(--radius-md); background: var(--surface-raised); box-shadow: var(--shadow-popover); color: var(--ink-1); font-size: 12px; line-height: 16px; text-align: center; white-space: nowrap; }
+  .anno span small { display: block; color: var(--ink-2); font-size: 11px; }
+  .anno--bar span { bottom: auto; top: calc(100% + var(--space-2)); }
+  .anno[data-a="main"] span { bottom: 64px; }
+  #annoBtn { position: absolute; z-index: 10; left: 50%; bottom: var(--space-4); transform: translateX(-50%); box-shadow: var(--shadow-popover); background: var(--surface-raised); }
+</style></head>
+<body>
+<div class="bb-shell bb-shell--bar" id="shell">
+  <aside class="bb-shell__side" aria-label="导航"><div class="bb-shell__scroll" id="side"></div></aside>
+  <div class="bb-toolbar" role="toolbar" aria-label="顶栏" id="bar"></div>
+  <main class="bb-shell__main" id="main"><div class="bb-grid" id="grid" role="listbox" aria-label="props/chest"></div></main>
+  <aside class="bb-shell__insp" aria-label="检查器"><div class="bb-shell__scroll" id="insp"></div></aside>
+  <div class="bb-resizer bb-resizer--side" data-edge="side" role="separator" aria-label="调整左栏宽度"></div>
+  <div class="bb-resizer bb-resizer--insp" data-edge="insp" role="separator" aria-label="调整检查器宽度"></div>
+  <div class="anno" data-a="side"><i></i><span>左栏 <b id="aSide">232</b><small>可折叠 · 可拖动 180–360</small></span></div>
+  <div class="anno anno--bar" data-a="bar"><i></i><span>顶栏 48 · 半透明材质<small>横跨内容区与检查器，内容从下面滚过</small></span></div>
+  <div class="anno" data-a="main"><i></i><span>内容区 <b id="aMain"></b><small>自适应 · 不小于 560</small></span></div>
+  <div class="anno" data-a="insp"><i></i><span>检查器 <b id="aInsp">320</b><small>可折叠 · 可拖动 280–480</small></span></div>
+  <button class="bb-btn" id="annoBtn" aria-pressed="true"></button>
+</div>
+<script>
+  var B = Bowerbird, I = B.icon, H = B.html, D = B.demo;
+  var shell = document.getElementById('shell'), grid = document.getElementById('grid'), insp = document.getElementById('insp');
+  var W = { side: 232, insp: 320 }, LIM = { side: [180, 360], insp: [280, 480] };
+  document.getElementById('side').innerHTML = D.sidebar('chest');
+  document.getElementById('bar').innerHTML =
+    '<button class="bb-btn bb-btn--ghost bb-btn--icon" data-panel="side" aria-pressed="true" aria-label="左栏" title="左栏 ⌘\\">' + I('panel-left') + '</button>' +
+    '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="后退">' + I('chevron-left') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="前进" disabled>' + I('chevron-right') + '</button>' +
+    '<div class="bb-crumbs"><span>星落镇</span>' + I('chevron-right', 'bb-icon--12') + '<span>props</span>' + I('chevron-right', 'bb-icon--12') + '<b>chest</b></div>' +
+    '<span class="bb-toolbar__grow"></span>' +
+    '<input class="bb-slider" type="range" min="96" max="320" value="168" aria-label="缩略图大小" style="width:88px">' +
+    '<div class="bb-seg" role="radiogroup" aria-label="布局"><i class="bb-seg__thumb"></i>' + [['layout-dashboard', '瀑布流'], ['layout-grid', '等高网格'], ['list', '列表']].map(function (it, n) { return '<button class="bb-seg__item" role="radio" aria-checked="' + (n === 1) + '" aria-label="' + it[1] + '" title="' + it[1] + '">' + I(it[0]) + '</button>'; }).join('') + '</div>' +
+    '<button class="bb-select"><span class="bb-select__label">排序</span>修改时间' + I('chevron-down', 'bb-icon--12') + '</button>' +
+    '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="筛选" title="筛选">' + I('list-filter') + '</button>' +
+    '<div class="bb-field">' + I('search') + '<input class="bb-field__input" placeholder="搜索，或输入 tag: stage:" aria-label="搜索">' + H.kbd('⌘ F') + '</div>' +
+    '<span class="bb-toolbar__sep"></span>' +
+    '<button class="bb-btn bb-btn--primary">' + I('upload') + '上传</button>' +
+    '<button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="重新扫描" title="重新扫描">' + I('refresh-cw') + '</button>' +
+    '<button class="bb-btn bb-btn--ghost jobs" title="正在处理 1 个，2 个等待渲染"><svg class="ring" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="var(--fill-press)"/><circle cx="8" cy="8" r="6" stroke="var(--ink-1)" stroke-dasharray="37.7" stroke-dashoffset="14" stroke-linecap="round"/></svg>1' + I('circle-dashed', 'bb-icon--12') + '2</button>' +
+    '<button class="bb-btn bb-btn--ghost bb-btn--icon" data-panel="insp" aria-pressed="true" aria-label="检查器" title="检查器 ⌘I">' + I('panel-right') + '</button>';
+  var here = D.assets.filter(function (a) { return a.path.indexOf('props/chest/') === 0; }).concat([D.byName('icon_gem.png'), D.byName('npc_guard.glb')]);
+  grid.innerHTML = here.map(function (a) { return H.cell(a, { arrive: true }); }).join('');
+  [].forEach.call(grid.querySelectorAll('.bb-arrive > *:first-child'), function (el, n) { el.style.animationDelay = 120 + n * 45 + 'ms'; });
+  function showFolder() {
+    insp.innerHTML = '<div class="folder-head"><b>chest</b><span>props/chest · 11 个资产 · 34.8 MB</span></div>' +
+      H.sec('概况', H.kv([['物料阶段', '<div style="display:grid;gap:4px">' + H.stage('production', 'full').replace('</span></span>', ' · 5</span></span>') + H.stage('runtime', 'full').replace('</span></span>', ' · 6</span></span>') + '</div>'], ['待审', '1'], ['有问题', '1']])) +
+      H.sec('新资产的默认值', H.kv([['物料阶段', '<button class="bb-select">' + H.stage('production', 'full') + I('chevron-down', 'bb-icon--12') + '</button>'], ['校验', '需要校验'], ['默认标签', '<div class="bb-tags">' + H.tag('宝箱') + H.tag('道具') + '</div>']]));
+  }
+  showFolder();
+  grid.addEventListener('click', function (e) {
+    var c = e.target.closest('.bb-cell');
+    [].forEach.call(grid.querySelectorAll('[aria-selected="true"]'), function (x) { x.setAttribute('aria-selected', 'false'); });
+    if (!c) return showFolder();
+    c.setAttribute('aria-selected', 'true');
+    insp.innerHTML = H.inspector(D.assets.filter(function (a) { return a.id === c.dataset.id; })[0]);
+  });
+  document.getElementById('main').addEventListener('click', function (e) { if (e.target.id === 'main' || e.target.id === 'grid') { [].forEach.call(grid.querySelectorAll('[aria-selected="true"]'), function (x) { x.setAttribute('aria-selected', 'false'); }); showFolder(); } });
+  B.slider(document.querySelector('.bb-slider'), function (v) { grid.style.setProperty('--bb-cell', v + 'px'); });
+  /* panels: collapse with a spring; drag to resize 1:1 with rubber-banding past the limits */
+  function apply() { shell.style.setProperty('--bb-side-w', W.side + 'px'); shell.style.setProperty('--bb-insp-w', W.insp + 'px'); anno(); }
+  function toggle(which) { var closed = shell.getAttribute('data-' + which) === 'closed'; if (closed) shell.removeAttribute('data-' + which); else shell.setAttribute('data-' + which, 'closed'); document.querySelector('[data-panel="' + which + '"]').setAttribute('aria-pressed', closed ? 'true' : 'false'); setTimeout(anno, 620); anno(); }
+  document.addEventListener('click', function (e) { var p = e.target.closest('[data-panel]'); if (p) toggle(p.dataset.panel); });
+  document.addEventListener('keydown', function (e) { if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); toggle('side'); } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') { e.preventDefault(); toggle('insp'); } });
+  [].forEach.call(document.querySelectorAll('.bb-resizer'), function (r) {
+    var edge = r.dataset.edge, start = 0, base = 0;
+    r.addEventListener('pointerdown', function (e) { r.setPointerCapture(e.pointerId); start = e.clientX; base = W[edge]; shell.setAttribute('data-resizing', ''); r.setAttribute('data-active', ''); });
+    r.addEventListener('pointermove', function (e) {
+      if (!r.hasAttribute('data-active')) return;
+      var w = base + (edge === 'side' ? 1 : -1) * (e.clientX - start), lo = LIM[edge][0], hi = LIM[edge][1];
+      if (w < lo) w = lo + B.rubberband(w - lo, 240); else if (w > hi) w = hi + B.rubberband(w - hi, 240);
+      W[edge] = w; apply();
+    });
+    function up() { if (!r.hasAttribute('data-active')) return; r.removeAttribute('data-active'); shell.removeAttribute('data-resizing'); W[edge] = Math.round(Math.min(LIM[edge][1], Math.max(LIM[edge][0], W[edge]))); apply(); setTimeout(anno, 620); }
+    r.addEventListener('pointerup', up); r.addEventListener('pointercancel', up);
+  });
+  /* dimension notes follow the live layout */
+  function anno() {
+    var sw = shell.getAttribute('data-side') === 'closed' ? 0 : W.side, iw = shell.getAttribute('data-insp') === 'closed' ? 0 : W.insp, tw = shell.clientWidth, th = shell.clientHeight;
+    var box = { side: [4, 4, sw - 8, th - 8], bar: [sw + 4, 4, tw - sw - 8, 40], main: [sw + 4, 52, tw - sw - iw - 8, th - 56], insp: [tw - iw + 4, 52, iw - 8, th - 56] };
+    [].forEach.call(document.querySelectorAll('.anno'), function (a) { var b = box[a.dataset.a]; a.style.cssText = 'left:' + b[0] + 'px;top:' + b[1] + 'px;width:' + Math.max(0, b[2]) + 'px;height:' + b[3] + 'px;' + (b[2] < 60 ? 'visibility:hidden' : ''); });
+    document.getElementById('aSide').textContent = Math.round(sw); document.getElementById('aInsp').textContent = Math.round(iw); document.getElementById('aMain').textContent = Math.round(tw - sw - iw);
+  }
+  var annoBtn = document.getElementById('annoBtn');
+  function annoLabel() { var on = shell.hasAttribute('data-anno'); annoBtn.innerHTML = I(on ? 'eye' : 'scan-search') + (on ? '隐藏尺寸标注' : '显示尺寸标注'); annoBtn.setAttribute('aria-pressed', on); }
+  annoBtn.addEventListener('click', function () { if (shell.hasAttribute('data-anno')) shell.removeAttribute('data-anno'); else shell.setAttribute('data-anno', ''); annoLabel(); });
+  annoLabel(); apply(); window.addEventListener('resize', anno);
+</script>
+</body>
+</html>

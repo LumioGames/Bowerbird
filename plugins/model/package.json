@@ -1,0 +1,135 @@
+{
+  "name": "@bowerbird/plugin-model",
+  "version": "0.1.0",
+  "description": "GLB, glTF, FBX: probe, browser thumbnails, PBR viewer, compare, turnaround overlay, size check",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/model"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.model",
+    "displayName": "3D 模型",
+    "description": "GLB、glTF、FBX：读取信息、浏览器缩略图、PBR 查看器、对比、四视图叠加、尺寸检查",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "formats": [
+        {
+          "id": "model",
+          "displayName": "3D 模型",
+          "extensions": [
+            ".glb",
+            ".gltf",
+            ".fbx"
+          ],
+          "priority": 100,
+          "thumbnail": "browser"
+        },
+        {
+          "id": "gltf-buffer",
+          "displayName": "glTF 数据",
+          "extensions": [
+            ".bin"
+          ],
+          "priority": 10,
+          "thumbnail": "none"
+        }
+      ],
+      "validators": [
+        {
+          "id": "size-vs-design"
+        }
+      ],
+      "settings": {
+        "type": "object",
+        "properties": {
+          "defaultEnvironment": {
+            "type": "string",
+            "title": "默认环境",
+            "scope": "library",
+            "enum": [
+              "studio",
+              "sunset",
+              "overcast",
+              "night"
+            ],
+            "enumNames": [
+              "工作室",
+              "日落",
+              "阴天",
+              "夜晚"
+            ],
+            "default": "studio"
+          },
+          "maxPixelRatio": {
+            "type": "number",
+            "title": "渲染像素比上限",
+            "scope": "machine",
+            "default": 2
+          }
+        }
+      }
+    },
+    "l10n": {
+      "en": {
+        "3D 模型": "3D model",
+        "glTF 数据": "glTF data",
+        "GLB、glTF、FBX：读取信息、浏览器缩略图、PBR 查看器、对比、四视图叠加、尺寸检查": "GLB, glTF, FBX: probe, browser thumbnails, PBR viewer, compare, turnaround overlay, size check",
+        "默认环境": "Default environment",
+        "工作室": "Studio",
+        "日落": "Sunset",
+        "阴天": "Overcast",
+        "夜晚": "Night",
+        "渲染像素比上限": "Maximum render pixel ratio"
+      },
+      "ja": {
+        "3D 模型": "3D モデル",
+        "glTF 数据": "glTF データ",
+        "GLB、glTF、FBX：读取信息、浏览器缩略图、PBR 查看器、对比、四视图叠加、尺寸检查": "GLB、glTF、FBX：情報の読み取り、ブラウザ側のサムネイル、PBR ビューア、比較、四面図の重ね表示、サイズチェック",
+        "默认环境": "既定の環境",
+        "工作室": "スタジオ",
+        "日落": "夕暮れ",
+        "阴天": "曇り",
+        "夜晚": "夜",
+        "渲染像素比上限": "レンダリングのピクセル比の上限"
+      },
+      "ko": {
+        "3D 模型": "3D 모델",
+        "glTF 数据": "glTF 데이터",
+        "GLB、glTF、FBX：读取信息、浏览器缩略图、PBR 查看器、对比、四视图叠加、尺寸检查": "GLB, glTF, FBX: 정보 읽기, 브라우저 썸네일, PBR 뷰어, 비교, 4면도 겹쳐 보기, 크기 검사",
+        "默认环境": "기본 환경",
+        "工作室": "스튜디오",
+        "日落": "노을",
+        "阴天": "흐림",
+        "夜晚": "밤",
+        "渲染像素比上限": "렌더링 픽셀 비율 상한"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@types/react": "19.3.2",
+    "@types/three": "0.180.0",
+    "react": "19.2.9",
+    "three": "0.180.0"
+  }
+}

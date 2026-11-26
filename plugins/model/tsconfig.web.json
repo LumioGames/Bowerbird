@@ -1,0 +1,38 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist/.web-types",
+    "tsBuildInfoFile": "dist/.web.tsbuildinfo",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "emitDeclarationOnly": true,
+    "noUncheckedIndexedAccess": false,
+    "paths": {
+      "@bowerbird/plugin-sdk/web": [
+        "../../packages/plugin-sdk/src/web/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/web",
+    "src/shared"
+  ],
+  "references": [
+    {
+      "path": "../../packages/schema"
+    },
+    {
+      "path": "../../packages/plugin-sdk/tsconfig.web.json"
+    }
+  ],
+  "exclude": [
+    "src/**/__tests__"
+  ]
+}

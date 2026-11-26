@@ -1,0 +1,54 @@
+<!-- @dsCard group="浮层" height=470 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>ContextMenu — preview</title>
+<style>
+  html, body { height: 100%; }
+  body { position: relative; padding: var(--space-5); background: var(--surface-canvas); overflow: hidden; }
+  .bb-grid { grid-template-columns: repeat(3, 132px); }
+  #menu { position: absolute; z-index: 5; }
+  small { display: block; margin-top: var(--space-3); color: var(--ink-3); font-size: 11px; }
+</style></head>
+<body>
+<div class="bb-grid" id="grid"></div>
+<div id="menu"></div>
+<script>
+  var B = Bowerbird, I = B.icon, H = B.html, D = B.demo;
+  var names = ['chest_concept.png', 'chest.glb', 'chest_icon.png'], cur = 1, stage = 'runtime';
+  function grid() { document.getElementById('grid').innerHTML = names.map(function (n, i) { return H.cell(Object.assign({}, D.byName(n), i === cur ? { stage: stage } : {}), { selected: i === cur }); }).join(''); }
+  function item(ic, label, kbd, cls, extra) { return '<button class="bb-menu__item' + (cls ? ' ' + cls : '') + '" role="menuitem"' + (extra || '') + '>' + (ic ? I(ic) : '') + label + (kbd ? '<span class="bb-menu__kbd">' + kbd + '</span>' : '') + '</button>'; }
+  function open(x, y) {
+    var m = document.getElementById('menu');
+    var short = { reference: '参考', production: '生产', runtime: '运行时' };
+    m.innerHTML = '<div class="bb-menu" role="menu" data-open style="--bb-origin:0 0">' +
+      item('maximize-2', '打开', '↵') + item('eye', '快速预览', '空格') + item('git-compare-arrows', '对比…') + '<div class="bb-menu__sep"></div>' +
+      item('external-link', '用默认程序打开源文件', '⌘O') + item('folder-search', '在文件夹中显示源文件', '⌥⌘R') + '<div class="bb-menu__sep"></div>' +
+      '<button class="bb-menu__item" role="menuitem" aria-haspopup="menu" data-sub>' + I('layers') + '物料阶段<span class="bb-menu__kbd" style="padding-left:24px">' + short[stage] + '</span>' + I('chevron-right', 'bb-icon--12') + '</button>' +
+      '<div class="bb-menu__sep"></div>' + item('copy', '复制', '⌘D') + item('folder-input', '移动到…') + item('pencil', '改名', 'F2') + item('link', '建立关系…') + item('download', '导出…') +
+      '<div class="bb-menu__sep"></div>' + item('trash-2', '移入回收站', '⌫', 'bb-menu__item--danger') + '</div>' +
+      '<div class="bb-menu" role="menu" data-open data-submenu hidden style="position:absolute;min-width:176px">' +
+      ['reference', 'production', 'runtime'].map(function (s, n) { return '<button class="bb-menu__item" role="menuitemradio" aria-checked="' + (s === stage) + '" data-stage-set="' + s + '"><span class="bb-menu__check">' + (s === stage ? I('check') : '') + '</span>' + H.stage(s, 'full') + '<span class="bb-menu__kbd">' + (n + 1) + '</span></button>'; }).join('') + '</div>';
+    var subBtn = m.querySelector('[data-sub]'), sub = m.querySelector('[data-submenu]');
+    function showSub() { sub.hidden = false; sub.style.left = (m.firstChild.offsetWidth + 2) + 'px'; sub.style.top = (subBtn.offsetTop - 1) + 'px'; subBtn.setAttribute('data-active', ''); }
+    subBtn.addEventListener('pointerenter', showSub); subBtn.addEventListener('click', function (e) { e.stopPropagation(); showSub(); });
+    m.firstChild.addEventListener('pointerover', function (e) { var b = e.target.closest('.bb-menu__item'); if (b && b !== subBtn) { sub.hidden = true; subBtn.removeAttribute('data-active'); } });
+    var w = 216, h = m.firstChild.offsetHeight, W = document.body.clientWidth, Hh = document.body.clientHeight;
+    var fx = x + w > W - 8, fy = y + h > Hh - 8;
+    m.style.left = (fx ? x - w : x) + 'px'; m.style.top = Math.max(8, fy ? Hh - h - 8 : y) + 'px';
+    m.firstChild.style.setProperty('--bb-origin', (fx ? '100%' : '0') + ' ' + (fy ? (y - (Hh - h - 8)) + 'px' : '0'));
+  }
+  grid(); open(250, 40);
+  document.addEventListener('contextmenu', function (e) {
+    e.preventDefault(); var c = e.target.closest('.bb-cell');
+    if (c) { cur = [].indexOf.call(c.parentNode.children, c); stage = D.byName(names[cur]).stage; grid(); }
+    open(e.clientX, e.clientY);
+  });
+  document.addEventListener('click', function (e) {
+    var s = e.target.closest('[data-stage-set]');
+    if (s) { stage = s.dataset.stageSet; grid(); }
+    document.getElementById('menu').innerHTML = '';
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') document.getElementById('menu').innerHTML = ''; });
+</script>
+</body>
+</html>

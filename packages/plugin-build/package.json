@@ -1,0 +1,47 @@
+{
+  "name": "@bowerbird/plugin-build",
+  "version": "0.1.0",
+  "description": "bowerbird-plugin-build: builds a Bowerbird plugin's web part (esbuild + Tailwind against the shared theme). A devDependency for plugin authors; not needed to run Bowerbird.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/plugin-build"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "bin": {
+    "bowerbird-plugin-build": "./bin/build-web.mjs"
+  },
+  "exports": {
+    "./shared-modules": "./bin/shared-modules.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:^",
+    "@tailwindcss/cli": "4.3.5",
+    "@types/react": "19.3.2",
+    "@types/react-dom": "19.3.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.80.0",
+    "motion": "14.14.0",
+    "radix-ui": "1.8.1",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "sonner": "2.0.8",
+    "tailwind-merge": "3.7.1",
+    "tailwindcss": "4.3.5"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  }
+}

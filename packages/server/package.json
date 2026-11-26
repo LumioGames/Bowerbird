@@ -1,0 +1,44 @@
+{
+  "name": "@bowerbird/server",
+  "version": "0.1.0",
+  "description": "Bowerbird HTTP API, event stream, static web shell, render-result intake",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "prepack": "node ../../scripts/copy-legal.mjs"
+  },
+  "dependencies": {
+    "@bowerbird/core": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@fastify/multipart": "9.4.0",
+    "@fastify/static": "8.3.0",
+    "fastify": "5.12.8",
+    "yazl": "3.3.1"
+  },
+  "devDependencies": {
+    "@types/yazl": "3.3.1"
+  }
+}

@@ -1,0 +1,36 @@
+<!-- @dsCard group="资产标记" height=560 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>AssetCell — preview</title>
+<style>
+  body { padding: var(--space-4) var(--space-5) var(--space-5); background: var(--surface-canvas); }
+  .bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); color: var(--ink-2); }
+  .bar small { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bar .sp { flex: 1; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { margin-top: var(--space-half); text-align: center; color: var(--ink-3); font-size: 11px; line-height: 14px; }
+</style></head>
+<body>
+<div class="bar" id="bar"></div>
+<div class="bb-grid" id="grid" role="listbox" aria-label="网格单元的全部状态" aria-multiselectable="true"></div>
+<script>
+  var B = Bowerbird, H = B.html, D = B.demo;
+  var set = [['chest_concept.png', '正常'], ['chest.glb', '选中 · 待审'], ['chest_icon.png', '透明底 · 上游已更新'], ['chest.md', '文档：直接显示文字'], ['chest_open.wav', '音频'], ['chest_open_preview.mp4', '视频 · 免审'],
+    ['icon_gem.png', '处理中'], ['npc_guard.glb', '等待渲染'], ['intro_cutscene.mov', '处理失败'], ['chest_high.blend', '未知格式'], ['hero_idle.fbx', '文件缺失'], ['potion.glb', '断链引用']];
+  document.getElementById('bar').innerHTML = '缩略图大小<input class="bb-slider" type="range" min="96" max="320" value="148" aria-label="缩略图大小"><small id="v"></small><span class="sp"></span><button class="bb-btn bb-btn--sm" id="again">' + B.icon('refresh-cw', 'bb-icon--12') + '重放缩略图到达</button>';
+  var grid = document.getElementById('grid');
+  function render(arrive) { grid.innerHTML = set.map(function (s, n) { return '<figure>' + H.cell(D.byName(s[0]), { selected: n === 1, arrive: arrive }).replace('bb-arrive"', 'bb-arrive" style="animation-delay:' + n * 40 + 'ms"') + '<figcaption>' + s[1] + '</figcaption></figure>'; }).join(''); stagger(); }
+  function stagger() { [].forEach.call(grid.querySelectorAll('.bb-arrive > *:first-child'), function (el, n) { el.style.animationDelay = n * 45 + 'ms'; }); }
+  render(true);
+  B.slider(document.querySelector('.bb-slider'), function (v) { grid.style.setProperty('--bb-cell', v + 'px'); document.getElementById('v').textContent = v + 'px'; });
+  document.getElementById('again').addEventListener('click', function () { render(true); });
+  grid.addEventListener('click', function (e) {
+    var c = e.target.closest('.bb-cell'); if (!c) return;
+    if (!(e.metaKey || e.ctrlKey || e.shiftKey)) [].forEach.call(grid.querySelectorAll('.bb-cell[aria-selected="true"]'), function (x) { x.setAttribute('aria-selected', 'false'); });
+    c.setAttribute('aria-selected', c.getAttribute('aria-selected') === 'true' && (e.metaKey || e.ctrlKey) ? 'false' : 'true');
+  });
+  /* progress keeps moving so the processing state reads as alive */
+  var p = 62; setInterval(function () { p = p >= 100 ? 8 : p + 7; var el = grid.querySelector('.bb-progress'); if (el) el.style.setProperty('--p', Math.min(p, 100) + '%'); }, 900);
+</script>
+</body>
+</html>

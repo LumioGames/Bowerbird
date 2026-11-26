@@ -1,0 +1,112 @@
+<!-- @dsCard group="框架" height=4000 width=1440 page subtitle="设计基础总览 · 深色主题" -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>OverviewDark — preview</title>
+<style>
+  body { background: var(--surface-canvas); }
+  .sheet { width: 1440px; padding: var(--space-12); background: var(--surface-canvas); }
+  .sheet > header { display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: var(--space-6); }
+  .sheet > header h1 { margin: 0; }
+  .sheet > header p { margin: var(--space-1) 0 0; color: var(--ink-2); }
+  .sheet > header small { color: var(--ink-3); font-size: 11px; text-align: right; line-height: 16px; }
+  .blk { padding: var(--space-6) 0 var(--space-8); box-shadow: inset 0 1px 0 var(--line-hairline); }
+  .blk > h2 { margin: 0 0 var(--space-5); font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .blk > h2 span { margin-right: var(--space-2); color: var(--ink-3); font-family: var(--font-mono); font-weight: 400; font-size: 12px; }
+  h4 { margin: 0 0 var(--space-2); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
+  .cols { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
+  .sw { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-2); margin-bottom: var(--space-4); }
+  .sw div { width: 100px; }
+  .sw i { display: block; height: 32px; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--line-hairline); }
+  .sw span { display: block; margin-top: var(--space-half); color: var(--ink-2); font-family: var(--font-mono); font-size: 10px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ty { display: grid; grid-template-columns: 112px minmax(0, 1fr) 96px; gap: var(--space-2) var(--space-3); align-items: baseline; }
+  .ty code, .ty small { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; line-height: 14px; white-space: nowrap; }
+  .ty div { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp { display: grid; gap: var(--space-1); } .sp div { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; line-height: 14px; }
+  .sp i { height: 8px; border-radius: 2px; background: var(--ink-2); }
+  .rd { display: flex; gap: var(--space-2); } .rd div { color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; text-align: center; }
+  .rd i { display: block; width: 44px; height: 44px; margin-bottom: var(--space-1); background: var(--fill-hover); box-shadow: inset 0 0 0 1px var(--line-control); }
+  .sh { display: flex; gap: var(--space-4); } .sh div { flex: 1; height: 56px; display: grid; place-items: center; border-radius: var(--radius-md); background: var(--surface-raised); color: var(--ink-3); font-family: var(--font-mono); font-size: 10px; }
+  .big { position: relative; width: 208px; margin: 40px 30px 40px; }
+  .big .bb-cell { padding: 0; pointer-events: none; }
+  .big .bb-mark { transform: scale(1.4); }
+  .big .bb-cell__tl { top: 8px; left: 8px; } .big .bb-cell__tl .bb-mark { transform-origin: 0 0; }
+  .big .bb-cell__tr { top: 8px; right: 8px; } .big .bb-cell__tr .bb-mark { transform-origin: 100% 0; }
+  .big .bb-cell__bl { bottom: 8px; } .big .bb-cell__bl .bb-mark { transform-origin: 0 100%; }
+  .big .bb-cell__br { bottom: 8px; right: 8px; } .big .bb-cell__br .bb-mark { transform-origin: 100% 100%; }
+  .call { position: absolute; font-size: 11px; line-height: 14px; color: var(--ink-2); white-space: nowrap; }
+  .call b { display: block; color: var(--ink-1); font-weight: 600; }
+  .c1 { left: -30px; top: -34px; } .c2 { right: -30px; top: -34px; text-align: right; } .c3 { left: -30px; bottom: -34px; } .c4 { right: -30px; bottom: -34px; text-align: right; }
+  table.mk { border-collapse: collapse; width: 100%; }
+  table.mk td { padding: var(--space-1h) var(--space-2) var(--space-1h) 0; font-size: 12px; line-height: 16px; color: var(--ink-2); }
+  table.mk td:first-child { width: 28px; } table.mk td:nth-child(2) { color: var(--ink-1); white-space: nowrap; }
+  table.mk tr + tr td { box-shadow: inset 0 1px 0 var(--line-hairline); }
+  .proof { --bb-cell: 120px; grid-template-columns: repeat(auto-fill, 132px); }
+  .card { padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-panel); min-width: 0; }
+  .card--canvas { background: none; box-shadow: inset 0 0 0 1px var(--line-hairline); }
+  .card--flush { padding: 0; overflow: hidden; }
+  .card--flush > h4 { padding: var(--space-4) var(--space-4) 0; }
+  .stack { display: grid; gap: var(--space-3); } .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .states { --bb-cell: 112px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .frame { height: 560px; border-radius: var(--radius-lg); overflow: hidden; box-shadow: inset 0 0 0 1px var(--line-hairline), var(--shadow-popover); }
+  .frame .bb-grid { padding: var(--space-3) var(--space-5); }
+  .frame .bb-toolbar .bb-field { width: 220px; flex: none; }
+  .spec { width: 100%; border-collapse: collapse; margin-top: var(--space-5); }
+  .spec th, .spec td { padding: var(--space-2) var(--space-4) var(--space-2) 0; text-align: left; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-2); box-shadow: inset 0 -1px 0 var(--line-hairline); }
+  .spec th { color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; } .spec td:first-child { color: var(--ink-1); font-weight: 600; }
+</style></head>
+<body>
+<script>
+  var B = Bowerbird, I = B.icon, H = B.html, D = B.demo;
+  var COLORS = [['表面', ['surface-canvas', 'surface-panel', 'surface-raised', 'surface-well']], ['填充与线', ['fill-rest', 'fill-hover', 'fill-press', 'fill-thumb', 'line-hairline', 'line-control']], ['文字', ['ink-1', 'ink-2', 'ink-3', 'ink-disabled']],
+    ['强调 · Bower 蓝', ['accent-fill', 'accent-ink', 'accent-soft', 'accent-ring']], ['警告与错误', ['warning-ink', 'warning-fill', 'warning-soft', 'danger-ink', 'danger-fill', 'danger-soft']], ['物料阶段', ['stage-reference', 'stage-production', 'stage-runtime']], ['材质', ['material-chrome', 'material-popover', 'material-mark', 'material-scrim']]];
+  var TYPE = [['text-display', '32 / 36 · 700', '文件夹即真值'], ['text-title', '20 / 26 · 600', '校验队列 · 还有 12 个待审'], ['text-headline', '15 / 20 · 600', '移入回收站会留下 3 条断链'], ['text-body', '13 / 18 · 400', '副本已获得新身份，原件的引用仍指向原件。'], ['text-body-strong', '13 / 18 · 600', 'chest_turnaround.png'],
+    ['text-callout', '12 / 16 · 400', 'GLB · 2,480 面 · 3 张贴图'], ['text-caption', '11 / 14 · 400', '3 分钟前 · agent:concept-artist'], ['text-label', '11 / 14 · 600', '智能文件夹'], ['text-mono', '12 / 16 · 400', 'stage:runtime format:model tris:<5000'], ['text-mono-sm', '11 / 14 · 400', '0192f3a4-7c1e-7b52-9d06-4e8a51c0d2f7']];
+  var SPACE = [['half', 2], ['1', 4], ['1h', 6], ['2', 8], ['3', 12], ['4', 16], ['5', 20], ['6', 24], ['8', 32], ['12', 48]], RADIUS = [['xs', 4], ['sm', 6], ['md', 8], ['lg', 12], ['xl', 16], ['full', 999]];
+  function cond(k, v) { return '<span class="bb-cond"><span class="bb-cond__key">' + k + ':</span>' + v + '</span>'; }
+  function mi(ic, label, kbd, cls) { return '<div class="bb-menu__item' + (cls ? ' ' + cls : '') + '">' + (ic ? I(ic) : '') + label + (kbd ? '<span class="bb-menu__kbd">' + kbd + '</span>' : '') + '</div>'; }
+  function mrow(n, sub) { var a = D.byName(n); return H.row({ thumb: a.art ? D.art(a.art, a) : I('file'), label: a.name, sub: sub, trailing: (a.issue ? H.issue(a.issue) : '') + H.stage(a.stage) + H.review(a.review) }); }
+  function tbl(title, rows) { return '<div><h4>' + title + '</h4><table class="mk">' + rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td></tr>'; }).join('') + '</table></div>'; }
+  function span(n, html, cls) { return '<div class="' + (cls || 'card') + '" style="grid-column:span ' + n + '">' + html + '</div>'; }
+  function sheet(theme, label) {
+    var s = '<section class="sheet bb-theme" data-theme="' + theme + '"><header><div><h1 class="text-display">Bowerbird</h1><p>设计基础 · ' + label + '主题</p></div><small>样例资产库「星落镇」<br>基准画布 1440 × 900 · 最小宽度 1280</small></header>';
+    /* 01 tokens */
+    s += '<div class="blk"><h2><span>01</span>设计变量</h2><div class="cols"><div style="grid-column:span 7">' + COLORS.map(function (g) { return '<h4>' + g[0] + '</h4><div class="sw">' + g[1].map(function (n) { return '<div><i style="background:var(--' + n + ')"></i><span>' + n + '</span></div>'; }).join('') + '</div>'; }).join('') + '</div>' +
+      '<div style="grid-column:span 5" class="stack"><div><h4>字体与字号 · 系统字体</h4><div class="ty">' + TYPE.map(function (t) { return '<code>' + t[0] + '</code><div class="' + t[0] + '">' + t[2].replace('<', '&lt;') + '</div><small>' + t[1] + '</small>'; }).join('') + '</div></div>' +
+      '<div class="cols" style="gap:var(--space-5)"><div style="grid-column:span 5"><h4>间距 · 4px 网格</h4><div class="sp">' + SPACE.map(function (x) { return '<div><i style="width:' + x[1] + 'px"></i>' + x[0] + ' · ' + x[1] + '</div>'; }).join('') + '</div></div>' +
+      '<div style="grid-column:span 7"><h4>圆角</h4><div class="rd">' + RADIUS.map(function (x) { return '<div><i style="border-radius:var(--radius-' + x[0] + ')"></i>' + x[0] + '</div>'; }).join('') + '</div><h4 style="margin-top:var(--space-5)">阴影</h4><div class="sh">' + ['raise', 'popover', 'dialog'].map(function (x) { return '<div style="box-shadow:var(--shadow-' + x + ')">' + x + '</div>'; }).join('') + '</div></div></div></div></div></div>';
+    /* 02 marks */
+    var icon = Object.assign({}, D.byName('chest_icon.png'), { review: 'pending' });
+    s += '<div class="blk"><h2><span>02</span>三组状态标记</h2><div class="cols"><div style="grid-column:span 3"><h4>四个角各管一件事</h4><div class="big">' + H.cell(icon, { hideName: true }) +
+      '<div class="call c1"><b>左上 · 物料阶段</b>圆形，看填充多少</div><div class="call c2"><b>右上 · 校验状态</b>方形，看线条图标</div><div class="call c3"><b>左下 · 问题</b>贴边的实心旗标</div><div class="call c4"><b>右下 · 格式信息</b>纯文字</div></div></div>' +
+      span(3, tbl('物料阶段 · 始终显示', [[H.markStage('reference'), '参考素材', '空心'], [H.markStage('production'), '生产物料', '半满'], [H.markStage('runtime'), '运行时物料', '实心']]), ' ') +
+      span(3, tbl('校验状态', [[H.markReview('pending'), '待审', '时钟'], [H.markReview('approved'), '通过', '对勾'], [H.markReview('rejected'), '打回', '折返箭头'], ['', '免审', '不显示']]), ' ') +
+      span(3, tbl('问题 · 唯一实心的角标', [[H.markIssue('broken'), '断链引用', '错误'], [H.markIssue('missing'), '文件缺失', '错误'], [H.markIssue('stale'), '上游已更新', '警告'], [H.markIssue('failed'), '处理失败', '警告']]), ' ') +
+      '<div style="grid-column:span 12"><h4>120 像素下的实际效果</h4><div class="bb-grid proof">' + ['chest_concept.png', 'chest_turnaround.png', 'chest.glb', 'chest_icon.png', 'potion.glb', 'chest_open.wav', 'chest_open_preview.mp4', 'ref_glass_orbs.png', 'hero_idle.fbx'].map(function (n) { return H.cell(D.byName(n)); }).join('') + '</div></div></div></div>';
+    /* 03 components */
+    s += '<div class="blk"><h2><span>03</span>基础组件</h2><div class="cols">' +
+      span(4, '<h4>按钮</h4><div class="stack"><div class="line"><button class="bb-btn bb-btn--primary">' + I('upload') + '上传</button><button class="bb-btn">' + I('refresh-cw') + '重新扫描</button><button class="bb-btn bb-btn--ghost">取消</button><button class="bb-btn" disabled>不可用</button></div><div class="line"><button class="bb-btn bb-btn--danger">' + I('trash-2') + '移入回收站</button><button class="bb-btn bb-btn--sm">确认已复核</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-pressed="true" aria-label="筛选">' + I('list-filter') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="更多">' + I('ellipsis') + '</button></div><div class="line"><button class="bb-btn bb-btn--lg bb-btn--primary">' + I('check') + '通过</button><button class="bb-btn bb-btn--lg">' + I('undo-2') + '打回</button><button class="bb-btn bb-btn--lg bb-btn--ghost">跳过</button></div></div>') +
+      span(4, '<h4>输入框</h4><div class="stack"><div class="bb-field">' + I('search') + cond('stage', 'runtime') + cond('format', 'model') + '<input class="bb-field__input" value="宝箱" aria-label="搜索">' + H.kbd('⌘ F') + '</div><div class="bb-field"><input class="bb-field__input" placeholder="名称" aria-label="名称"></div><div><div class="bb-field" data-invalid><input class="bb-field__input" placeholder="写清楚哪里不对" aria-label="打回意见"></div><div class="bb-hint" data-level="error">打回必须填写意见。</div></div></div>') +
+      span(4, '<h4>标签 · 人工与 AI</h4><div class="stack"><div class="bb-tags">' + H.tag('宝箱', { color: '#d898e8', removable: true }) + H.tag('道具', { removable: true }) + H.tag('低多边形', { ai: true }) + H.tag('木质', { ai: true }) + '<span class="bb-tag bb-tag--add">添加标签</span></div><h4 style="margin:var(--space-2) 0 0">页签</h4><div class="bb-tabs" role="tablist"><i class="bb-tabs__bar"></i><button class="bb-tab" role="tab" aria-selected="true">查看</button><button class="bb-tab" role="tab" aria-selected="false">关系<span class="bb-tab__count">9</span></button><button class="bb-tab" role="tab" aria-selected="false">版本<span class="bb-tab__count">2</span></button><button class="bb-tab" role="tab" aria-selected="false">校验</button></div><div class="line"><div class="bb-seg" role="radiogroup" aria-label="布局"><i class="bb-seg__thumb"></i><button class="bb-seg__item" role="radio" aria-checked="false" aria-label="瀑布流">' + I('layout-dashboard') + '</button><button class="bb-seg__item" role="radio" aria-checked="true" aria-label="等高网格">' + I('layout-grid') + '</button><button class="bb-seg__item" role="radio" aria-checked="false" aria-label="列表">' + I('list') + '</button></div><input class="bb-slider" type="range" min="96" max="320" value="168" aria-label="缩略图大小"></div></div>') +
+      span(3, '<h4>下拉菜单</h4><div class="stack" style="justify-items:start"><button class="bb-select" aria-expanded="true"><span class="bb-select__label">排序</span>修改时间' + I('chevron-down', 'bb-icon--12') + '</button><div class="bb-menu" style="min-width:176px"><div class="bb-menu__item"><span class="bb-menu__check"></span>名称</div><div class="bb-menu__item" data-active><span class="bb-menu__check">' + I('check') + '</span>修改时间</div><div class="bb-menu__item"><span class="bb-menu__check"></span>大小</div><div class="bb-menu__item"><span class="bb-menu__check"></span>格式</div></div></div>', 'card card--canvas') +
+      span(3, '<h4>右键菜单</h4><div class="bb-menu">' + mi('maximize-2', '打开', '↵') + mi('eye', '快速预览', '空格') + mi('git-compare-arrows', '对比…') + '<div class="bb-menu__sep"></div><div class="bb-menu__label">物料阶段</div><div class="bb-menu__item">' + H.stage('production', 'full') + '<span class="bb-menu__kbd">2</span></div><div class="bb-menu__item" data-active>' + H.stage('runtime', 'full') + '<span class="bb-menu__kbd">✓ 3</span></div><div class="bb-menu__sep"></div>' + mi('copy', '复制', '⌘D') + mi('link', '建立关系…') + '<div class="bb-menu__sep"></div>' + mi('trash-2', '移入回收站', '⌫', 'bb-menu__item--danger') + '</div>', 'card card--canvas') +
+      span(6, '<h4>对话框</h4><div class="bb-dialog" style="animation:none;width:100%"><h2 class="bb-dialog__title">把 chest_basecolor.png 移入回收站？</h2><p class="bb-dialog__text">有 1 个资产正在引用它。删除后这条引用会变成断链，并出现在「有问题」里。回收站保留 30 天，期间随时可以恢复到原位置。</p><div class="bb-dialog__body"><div class="bb-label">引用它的资产</div><div class="bb-dialog__list">' + mrow('chest.glb', 'props/chest/chest.glb') + '</div></div><div class="bb-dialog__foot"><button class="bb-btn bb-btn--lg bb-btn--ghost">取消</button><button class="bb-btn bb-btn--lg bb-btn--danger">' + I('trash-2') + '移入回收站</button></div></div>', 'card card--canvas') +
+      span(4, '<h4>提示条</h4><div class="stack">' + H.banner('warning', 'circle-arrow-up', '上游已更新，待复核', 'chest.glb 在 11 月 24 日被 user:lin 改过。这张 Icon 是照改动之前的模型渲染的。', '<button class="bb-btn bb-btn--sm bb-btn--primary">确认已复核</button><button class="bb-btn bb-btn--sm">替换本资产内容</button>') + H.banner('danger', 'unlink', '有 1 条引用断了', 'potion.glb 引用的贴图已经不在资产库里。', '<button class="bb-btn bb-btn--sm">重新指定贴图</button>') + H.banner('', 'puzzle', '旧版本不能预览', '', '<button class="bb-btn bb-btn--sm">了解版本插件</button>', true) + '</div>') +
+      span(4, '<h4>列表行</h4><div>' + H.row({ icon: 'inbox', label: '全部', count: '1,284' }) + H.row({ icon: 'clock', label: '待审', count: '42', selected: true }) + H.row({ icon: 'folder-search', label: '运行时模型', count: '73' }) + H.row({ icon: 'folder-open', label: 'props', sub: '道具', count: 212, depth: 0, toggle: true, expanded: true }) + H.row({ icon: 'folder', label: 'chest', depth: 1 }) + mrow('chest_high.blend', '上游 · 导出 · user:lin') + mrow('chest_icon.png', '下游 · 渲染 · agent:modeler') + '</div>') +
+      span(4, '<h4>检查器分区</h4>' + H.sec('基本', H.kv([['路径', H.copy('props/chest/chest.glb')], ['GUID', H.copy(D.byName('chest.glb').id)]])) + H.sec('阶段与校验', H.kv([['物料阶段', '<button class="bb-select">' + H.stage('runtime', 'full') + I('chevron-down', 'bb-icon--12') + '</button>'], ['校验状态', H.review('pending', true)]])) + H.sec('技术信息', H.kv([['三角面', '2,480'], ['贴图', '3 张 · 最大 1024'], ['动画', '1 段 · open']]), { by: 'bowerbird.model' }) + H.sec('版本', '', { collapsed: true, count: 2 }), 'card card--flush') +
+      span(8, '<h4>网格单元 · 全部状态</h4><div class="bb-grid states">' + ['chest_concept.png', 'chest.glb', 'chest_icon.png', 'chest.md', 'chest_open.wav', 'chest_open_preview.mp4', 'icon_gem.png', 'npc_guard.glb', 'intro_cutscene.mov', 'chest_high.blend', 'hero_idle.fbx', 'potion.glb'].map(function (n, i) { return H.cell(D.byName(n), { selected: i === 1 }); }).join('') + '</div>', 'card card--canvas') +
+      span(4, '<div class="bb-empty" style="min-height:330px"><div class="bb-empty__icon">' + I('upload', 'bb-icon--24') + '</div><h3 class="bb-empty__title">把文件拖进来，资产库就开始了</h3><p class="bb-empty__text">「星落镇」里还没有资产。拖入文件或文件夹，或把文件放进磁盘上的资产库目录。</p><div class="bb-empty__actions"><button class="bb-btn bb-btn--primary">' + I('upload') + '选择文件</button><button class="bb-btn">重新扫描</button></div></div>', 'card card--canvas card--flush') +
+      '</div></div>';
+    /* 04 shell */
+    var here = D.assets.filter(function (a) { return a.path.indexOf('props/chest/') === 0; });
+    s += '<div class="blk"><h2><span>04</span>三栏外壳</h2><div class="frame"><div class="bb-shell bb-shell--bar"><aside class="bb-shell__side"><div class="bb-shell__scroll">' + D.sidebar('chest') + '</div></aside>' +
+      '<div class="bb-toolbar"><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-pressed="true" aria-label="左栏">' + I('panel-left') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="后退">' + I('chevron-left') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="前进" disabled>' + I('chevron-right') + '</button><div class="bb-crumbs"><span>星落镇</span>' + I('chevron-right', 'bb-icon--12') + '<span>props</span>' + I('chevron-right', 'bb-icon--12') + '<b>chest</b></div><span class="bb-toolbar__grow"></span><input class="bb-slider" type="range" min="96" max="320" value="168" style="width:80px" aria-label="缩略图大小"><button class="bb-select"><span class="bb-select__label">排序</span>修改时间' + I('chevron-down', 'bb-icon--12') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="筛选">' + I('list-filter') + '</button><div class="bb-field">' + I('search') + '<input class="bb-field__input" placeholder="搜索" aria-label="搜索">' + H.kbd('⌘ F') + '</div><button class="bb-btn bb-btn--primary">' + I('upload') + '上传</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-label="重新扫描">' + I('refresh-cw') + '</button><button class="bb-btn bb-btn--ghost bb-btn--icon" aria-pressed="true" aria-label="检查器">' + I('panel-right') + '</button></div>' +
+      '<main class="bb-shell__main"><div class="bb-grid">' + here.map(function (a) { return H.cell(a, { selected: a.name === 'chest.glb' }); }).join('') + '</div></main><aside class="bb-shell__insp"><div class="bb-shell__scroll">' + H.inspector(D.byName('chest.glb')) + '</div></aside></div></div>' +
+      '<table class="spec"><tr><th>区域</th><th>默认</th><th>范围</th><th>折叠</th><th>拖动调整</th><th>底</th></tr><tr><td>左栏</td><td>232</td><td>180–360</td><td>可以 · ⌘\\</td><td>右边缘</td><td>surface-panel，实心</td></tr><tr><td>顶栏</td><td>高 48</td><td>横跨内容区与检查器</td><td>—</td><td>—</td><td>material-chrome + 背景模糊</td></tr><tr><td>内容区</td><td>余下的宽度</td><td>不小于 560</td><td>—</td><td>—</td><td>surface-canvas</td></tr><tr><td>检查器</td><td>320</td><td>280–480</td><td>可以 · ⌘I</td><td>左边缘</td><td>surface-panel，实心</td></tr></table></div>';
+    return s + '</section>';
+  }
+  document.body.insertAdjacentHTML('afterbegin', sheet('dark', '深色'));
+  B.init(document);
+  [].forEach.call(document.querySelectorAll('.frame .bb-slider'), function (el) { el.addEventListener('input', function () { el.closest('.bb-shell').querySelector('.bb-grid').style.setProperty('--bb-cell', el.value + 'px'); }); });
+</script>
+</body>
+</html>

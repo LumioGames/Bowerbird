@@ -1,0 +1,24 @@
+<!-- @dsCard group="反馈" height=340 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>EmptyState — preview</title>
+<style>
+  html, body { height: 100%; }
+  body { display: grid; grid-template-columns: 1.4fr 1fr; background: var(--surface-canvas); }
+  .bb-empty { min-height: 100%; }
+  .bb-empty + .bb-empty { box-shadow: inset 1px 0 0 var(--line-hairline); }
+</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var I = Bowerbird.icon;
+  document.getElementById('root').outerHTML =
+    '<div class="bb-empty"><div class="bb-empty__icon">' + I('upload', 'bb-icon--24') + '</div><h3 class="bb-empty__title">把文件拖进来，资产库就开始了</h3>' +
+      '<p class="bb-empty__text">「星落镇」里还没有资产。拖入文件或文件夹；或者直接把文件放进磁盘上的资产库目录，再点重新扫描。</p>' +
+      '<div class="bb-empty__actions"><button class="bb-btn bb-btn--primary">' + I('upload') + '选择文件</button><button class="bb-btn">' + I('refresh-cw') + '重新扫描</button></div></div>' +
+    '<div class="bb-empty"><div class="bb-empty__icon">' + I('search', 'bb-icon--24') + '</div><h3 class="bb-empty__title">没有符合条件的资产</h3>' +
+      '<p class="bb-empty__text">当前条件：<span class="text-mono">stage:runtime format:model tris:&lt;500</span></p>' +
+      '<div class="bb-empty__actions"><button class="bb-btn">去掉 tris:&lt;500</button><button class="bb-btn bb-btn--ghost">清空条件</button></div></div>';
+</script>
+</body>
+</html>

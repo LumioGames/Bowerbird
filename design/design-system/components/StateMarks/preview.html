@@ -1,0 +1,47 @@
+<!-- @dsCard group="资产标记" height=470 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>StateMarks — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-6) var(--space-8); align-items: start; background: var(--surface-canvas); }
+  h4 { margin: 0 0 var(--space-2); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
+  .big { position: relative; width: 232px; margin: 44px 34px 40px; }
+  .big .bb-cell { padding: 0; pointer-events: none; }
+  .big .bb-mark { transform: scale(1.5); }
+  .big .bb-cell__tl { transform-origin: 0 0; top: 8px; left: 8px; } .big .bb-cell__tl .bb-mark { transform-origin: 0 0; }
+  .big .bb-cell__tr { top: 8px; right: 8px; } .big .bb-cell__tr .bb-mark { transform-origin: 100% 0; }
+  .big .bb-cell__bl { bottom: 8px; } .big .bb-cell__bl .bb-mark { transform-origin: 0 100%; }
+  .big .bb-cell__br { bottom: 8px; right: 8px; } .big .bb-cell__br .bb-mark { transform-origin: 100% 100%; }
+  .call { position: absolute; font-size: 11px; line-height: 14px; color: var(--ink-2); white-space: nowrap; }
+  .call b { display: block; color: var(--ink-1); font-weight: 600; }
+  .c1 { left: -34px; top: -28px; } .c2 { right: -34px; top: -28px; text-align: right; } .c3 { left: -34px; bottom: -32px; } .c4 { right: -34px; bottom: -32px; text-align: right; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: var(--space-1h) var(--space-3) var(--space-1h) 0; vertical-align: middle; font-size: 12px; line-height: 16px; color: var(--ink-2); }
+  td:first-child { width: 28px; } td:nth-child(2) { width: 112px; color: var(--ink-1); white-space: nowrap; }
+  tr + tr td { box-shadow: inset 0 1px 0 var(--line-hairline); }
+  .grp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); }
+  .proof { grid-column: 1 / -1; }
+  .proof .bb-grid { --bb-cell: 120px; grid-template-columns: repeat(auto-fill, 132px); }
+</style></head>
+<body>
+<div>
+  <h4>一张缩略图，四个角各管一件事</h4>
+  <div class="big" id="big"></div>
+</div>
+<div class="grp" id="grp"></div>
+<div class="proof"><h4>120 像素下的实际效果</h4><div class="bb-grid" id="proof"></div></div>
+<script>
+  var B = Bowerbird, H = B.html, D = B.demo;
+  var icon = Object.assign({}, D.byName('chest_icon.png'), { review: 'pending' });
+  document.getElementById('big').innerHTML = H.cell(icon, { hideName: true }) +
+    '<div class="call c1"><b>左上 · 物料阶段</b>圆形，看填充多少</div><div class="call c2"><b>右上 · 校验状态</b>方形，看线条图标</div>' +
+    '<div class="call c3"><b>左下 · 问题</b>贴边的实心旗标</div><div class="call c4"><b>右下 · 格式信息</b>纯文字，由插件给</div>';
+  function tbl(title, rows) { return '<div><h4>' + title + '</h4><table>' + rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td></tr>'; }).join('') + '</table></div>'; }
+  document.getElementById('grp').innerHTML =
+    tbl('物料阶段 · 始终显示', [[H.markStage('reference'), '参考素材', '空心'], [H.markStage('production'), '生产物料', '半满'], [H.markStage('runtime'), '运行时物料', '实心：可以直接用']]) +
+    tbl('校验状态', [[H.markReview('pending'), '待审', '时钟'], [H.markReview('approved'), '通过', '对勾，Bower 蓝'], [H.markReview('rejected'), '打回', '折返箭头，朱红'], ['<span class="bb-mark" style="background:none;color:var(--ink-3)">—</span>', '免审', '不显示角标']]) +
+    tbl('问题 · 只有它是实心的', [[H.markIssue('broken'), '断链引用', '错误级'], [H.markIssue('missing'), '文件缺失', '错误级'], [H.markIssue('stale'), '上游已更新', '警告级'], [H.markIssue('failed'), '处理失败', '警告级'], [H.markIssue('broken', 2), '多个问题', '显示数量']]);
+  document.getElementById('proof').innerHTML = ['chest_concept.png', 'chest.glb', 'chest_icon.png', 'potion.glb', 'chest_open.wav', 'chest_open_preview.mp4', 'ref_glass_orbs.png', 'hero_idle.fbx'].map(function (n) { return H.cell(D.byName(n)); }).join('');
+</script>
+</body>
+</html>

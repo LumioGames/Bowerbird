@@ -1,0 +1,42 @@
+<!-- @dsCard group="检查器" height=640 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>InspectorSection — preview</title>
+<style>
+  html, body { height: 100%; }
+  body { display: grid; grid-template-columns: var(--size-inspector) var(--size-inspector) minmax(0, 1fr); background: var(--surface-canvas); gap: var(--space-5); padding: 0 var(--space-5) 0 0; }
+  .col { background: var(--surface-panel); overflow: auto; }
+  .col + .col { margin: var(--space-5) 0; border-radius: var(--radius-lg); align-self: start; }
+  .note { align-self: start; margin-top: var(--space-5); color: var(--ink-3); font-size: 11px; line-height: 16px; max-width: 240px; }
+  .note b { display: block; color: var(--ink-2); font-weight: 600; }
+  .pv-thumb { margin: var(--space-4) var(--space-4) var(--space-2); border-radius: var(--radius-md); overflow: hidden; aspect-ratio: 16 / 10; background: var(--surface-well); }
+  .pv-name { padding: 0 var(--space-4) var(--space-3); }
+  .pv-name b { display: block; font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .desc { margin: 0; color: var(--ink-1); }
+  .desc--ai { color: var(--ink-2); display: flex; gap: var(--space-1h); }
+  .desc--ai .bb-icon { margin-top: 3px; }
+  .pair { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+</style></head>
+<body>
+<div class="col" id="a"></div>
+<div class="col" id="b"></div>
+<script>
+  var B = Bowerbird, I = B.icon, H = B.html, D = B.demo, a = D.byName('chest.glb');
+  function sec(title, body, o) { o = o || {}; return '<section class="bb-sec"' + (o.collapsed ? ' data-collapsed' : '') + '><div class="bb-sec__head" role="button" tabindex="0" aria-expanded="' + !o.collapsed + '">' + I('chevron-right', 'bb-icon--12') + title + (o.count != null ? ' · ' + o.count : '') + (o.by ? '<span class="bb-sec__by">' + o.by + '</span>' : '') + '</div><div class="bb-sec__body">' + body + '</div></section>'; }
+  function kv(rows) { return '<dl class="bb-kv">' + rows.map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>'; }
+  function copy(t) { return '<button class="bb-copy" data-bb-copy="' + t + '" title="点击复制"><span>' + t + '</span>' + I('copy', 'bb-icon--12') + '</button>'; }
+  function rel(n, sub) { var x = D.byName(n); return H.row({ thumb: x.art ? D.art(x.art, x) : I('file'), label: x.name, sub: sub, trailing: H.stage(x.stage) }); }
+  document.getElementById('a').innerHTML =
+    '<div class="pv-thumb">' + D.art(a.art, a) + '</div><div class="pv-name"><b>' + a.name + '</b></div>' +
+    sec('基本', kv([['路径', copy(a.path)], ['GUID', copy(a.id)], ['大小', a.size], ['修改', '11 月 24 日 16:42 · user:lin']])) +
+    sec('描述', '<p class="desc">宝箱的运行时模型，含一段开箱动画。</p><p class="desc desc--ai">' + I('sparkles', 'bb-icon--12') + '<span>低多边形木质宝箱，黄铜包边，正面有锁扣。</span></p>') +
+    sec('标签', '<div class="bb-tags">' + H.tag('宝箱', { color: '#d898e8', removable: true }) + H.tag('道具', { removable: true }) + H.tag('低多边形', { ai: true }) + '<span class="bb-tag bb-tag--add">添加标签</span></div>') +
+    sec('阶段与校验', kv([['物料阶段', '<button class="bb-select">' + H.stage('runtime', 'full') + I('chevron-down', 'bb-icon--12') + '</button>'], ['校验状态', '<div class="pair">' + H.review('pending', true) + '<button class="bb-btn bb-btn--sm">去校验</button></div>'], ['原因', '<span style="color:var(--ink-2)">内容在上次校验后被替换过</span>']]));
+  document.getElementById('b').innerHTML =
+    sec('技术信息', kv([['三角面', '2,480'], ['顶点', '1,372'], ['材质', '1'], ['贴图', '3 张 · 最大 1024'], ['动画', '1 段 · open'], ['包围盒', '1.2 × 0.9 × 0.8 m'], ['UV / 法线', '有 / 有']]), { by: 'bowerbird.model' }) +
+    sec('关系', '<div>' + rel('chest_high.blend', '上游 · 导出') + rel('chest_basecolor.png', '引用 · 基础色') + rel('chest_icon.png', '下游 · 渲染') + '</div>', { count: 6 }) +
+    sec('生产记录', '', { collapsed: true, count: 1 }) + sec('版本', '', { collapsed: true, count: 2 }) + sec('问题', '', { collapsed: true, count: 0 });
+  document.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('bb-sec__head')) { e.preventDefault(); e.target.click(); } });
+</script>
+</body>
+</html>

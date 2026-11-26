@@ -1,0 +1,244 @@
+{
+  "name": "@bowerbird-fixtures/plugin-forge",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Test-only third-party creator plugin (fake AI generation) that exercises every UI slot. Not published.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "community.forge",
+    "displayName": "Forge",
+    "description": "AI 生图与生成模型（测试用，假实现，不访问网络）",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "creators": [
+        {
+          "id": "image"
+        },
+        {
+          "id": "model"
+        }
+      ],
+      "actions": [
+        {
+          "id": "variant"
+        }
+      ],
+      "ui": {
+        "detailTabs": [
+          "forge"
+        ],
+        "toolbarItems": [
+          "forge-quota"
+        ],
+        "sidebarSections": [
+          "forge-runs"
+        ],
+        "pages": [
+          "pick"
+        ],
+        "settingsPages": [
+          "forge"
+        ]
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "服务地址",
+            "scope": "library",
+            "default": "https://api.forge.example/v1"
+          },
+          "defaultModel": {
+            "type": "string",
+            "title": "默认模型",
+            "scope": "library",
+            "enum": [
+              "forge-xl 2.1",
+              "forge-lite 1.3"
+            ],
+            "default": "forge-xl 2.1"
+          },
+          "outputFolder": {
+            "type": "string",
+            "title": "产出放到",
+            "scope": "library",
+            "default": ""
+          },
+          "apiKey": {
+            "type": "string",
+            "title": "访问密钥",
+            "scope": "machine",
+            "writeOnly": true
+          },
+          "simulate": {
+            "type": "string",
+            "title": "测试：模拟故障",
+            "scope": "machine",
+            "enum": [
+              "none",
+              "missing-tool",
+              "unavailable"
+            ],
+            "default": "none",
+            "enumNames": [
+              "不模拟",
+              "缺少外部工具",
+              "服务没有响应（503）"
+            ]
+          }
+        }
+      }
+    },
+    "requires": {
+      "tools": []
+    },
+    "l10n": {
+      "en": {
+        "Forge": "Forge",
+        "AI 生图与生成模型（测试用，假实现，不访问网络）": "AI images and models (for tests: fake, no network access)",
+        "服务地址": "Service URL",
+        "默认模型": "Default model",
+        "产出放到": "Put outputs in",
+        "访问密钥": "Access key",
+        "测试：模拟故障": "Test: simulate a failure",
+        "不模拟": "Off",
+        "缺少外部工具": "Missing external tool",
+        "服务没有响应（503）": "Service not responding (503)",
+        "AI 生图": "AI image",
+        "生成模型": "Generate model",
+        "提示词": "Prompt",
+        "不想要的": "Negative prompt",
+        "模型": "Model",
+        "数量": "Count",
+        "尺寸": "Size",
+        "种子": "Seed",
+        "随机": "Random",
+        "面数上限": "Max triangles",
+        "贴图": "Texture",
+        "参考图": "Reference image",
+        "四视图": "Turnaround",
+        "设计对象": "Design object",
+        "生成变体（Forge）": "Generate variant (Forge)",
+        "色相": "Hue",
+        "挑选": "Pick",
+        "排队中": "Queued",
+        "生成中 {pct}%": "Generating {pct}%",
+        "AI 生图完成，挑出要留下的": "AI image is done: pick the ones to keep",
+        "生成模型完成，挑出要留下的": "The model is generated: pick the ones to keep",
+        "挑选…": "Pick…",
+        "已登记 {n} 个": "Registered {n}",
+        "已取消": "Cancelled",
+        "缺少外部工具 {tool}": "Missing external tool {tool}",
+        "提示词不能为空": "The prompt cannot be empty",
+        "先选一个四视图": "Pick a turnaround first",
+        "已生成 {name}": "Generated {name}",
+        "只能对一张图片生成变体": "A variant can only be made from one image",
+        "找不到 {name} 的文件": "Cannot find the file of {name}"
+      },
+      "ja": {
+        "Forge": "Forge",
+        "AI 生图与生成模型（测试用，假实现，不访问网络）": "AI 画像生成とモデル生成（テスト用の疑似実装で、ネットワークにはアクセスしません）",
+        "服务地址": "サービスの URL",
+        "默认模型": "既定のモデル",
+        "产出放到": "出力先",
+        "访问密钥": "アクセスキー",
+        "测试：模拟故障": "テスト：障害をシミュレート",
+        "不模拟": "シミュレートしない",
+        "缺少外部工具": "外部ツールがない",
+        "服务没有响应（503）": "サービスが応答しません（503）",
+        "AI 生图": "AI 画像生成",
+        "生成模型": "モデルを生成",
+        "提示词": "プロンプト",
+        "不想要的": "ネガティブプロンプト",
+        "模型": "モデル",
+        "数量": "数量",
+        "尺寸": "サイズ",
+        "种子": "シード",
+        "随机": "ランダム",
+        "面数上限": "三角面の上限",
+        "贴图": "テクスチャ",
+        "参考图": "参考画像",
+        "四视图": "四面図",
+        "设计对象": "デザイン対象",
+        "生成变体（Forge）": "バリエーションを生成（Forge）",
+        "色相": "色相",
+        "挑选": "選択",
+        "排队中": "待機中",
+        "生成中 {pct}%": "生成中 {pct}%",
+        "AI 生图完成，挑出要留下的": "AI 画像生成が完了しました。残すものを選んでください",
+        "生成模型完成，挑出要留下的": "モデルの生成が完了しました。残すものを選んでください",
+        "挑选…": "選択…",
+        "已登记 {n} 个": "{n} 個を登録しました",
+        "已取消": "キャンセルしました",
+        "缺少外部工具 {tool}": "外部ツール {tool} がありません",
+        "提示词不能为空": "プロンプトを入力してください",
+        "先选一个四视图": "先に四面図を選んでください",
+        "已生成 {name}": "{name} を生成しました",
+        "只能对一张图片生成变体": "バリエーションは 1 枚の画像からしか生成できません",
+        "找不到 {name} 的文件": "{name} のファイルが見つかりません"
+      },
+      "ko": {
+        "Forge": "Forge",
+        "AI 生图与生成模型（测试用，假实现，不访问网络）": "AI 이미지 생성과 모델 생성(테스트용 가짜 구현이라 네트워크에 접속하지 않아요)",
+        "服务地址": "서비스 주소",
+        "默认模型": "기본 모델",
+        "产出放到": "결과물 위치",
+        "访问密钥": "액세스 키",
+        "测试：模拟故障": "테스트: 장애 시뮬레이션",
+        "不模拟": "시뮬레이션 안 함",
+        "缺少外部工具": "외부 도구 없음",
+        "服务没有响应（503）": "서비스가 응답하지 않아요(503)",
+        "AI 生图": "AI 이미지 생성",
+        "生成模型": "모델 생성",
+        "提示词": "프롬프트",
+        "不想要的": "네거티브 프롬프트",
+        "模型": "모델",
+        "数量": "개수",
+        "尺寸": "크기",
+        "种子": "시드",
+        "随机": "무작위",
+        "面数上限": "최대 삼각형 수",
+        "贴图": "텍스처",
+        "参考图": "참고 이미지",
+        "四视图": "4면도",
+        "设计对象": "디자인 대상",
+        "生成变体（Forge）": "변형 생성(Forge)",
+        "色相": "색조",
+        "挑选": "선택",
+        "排队中": "대기 중",
+        "生成中 {pct}%": "생성 중 {pct}%",
+        "AI 生图完成，挑出要留下的": "AI 이미지 생성이 끝났어요. 남길 것을 골라 주세요",
+        "生成模型完成，挑出要留下的": "모델 생성이 끝났어요. 남길 것을 골라 주세요",
+        "挑选…": "선택…",
+        "已登记 {n} 个": "{n}개를 등록했어요",
+        "已取消": "취소했어요",
+        "缺少外部工具 {tool}": "외부 도구 {tool}이(가) 없어요",
+        "提示词不能为空": "프롬프트를 입력해 주세요",
+        "先选一个四视图": "먼저 4면도를 골라 주세요",
+        "已生成 {name}": "{name}을(를) 생성했어요",
+        "只能对一张图片生成变体": "변형은 이미지 한 장으로만 만들 수 있어요",
+        "找不到 {name} 的文件": "{name} 파일을 찾을 수 없어요"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "sharp": "0.34.5"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@types/react": "19.3.2",
+    "lucide-react": "1.80.0",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  }
+}

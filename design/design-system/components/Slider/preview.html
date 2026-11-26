@@ -1,0 +1,25 @@
+<!-- @dsCard group="操作" height=150 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Slider — preview</title>
+<style>
+  body { padding: var(--space-5); display: flex; align-items: center; gap: var(--space-6); }
+  .ctl { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-2); }
+  #val { width: 44px; color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #demo { width: 96px; }
+</style></head>
+<body>
+<div class="ctl" id="ctl"></div>
+<div id="demo"></div>
+<script>
+  var B = Bowerbird;
+  document.getElementById('ctl').innerHTML = B.icon('image', 'bb-icon--12') + '<input class="bb-slider" type="range" min="96" max="320" value="168" aria-label="缩略图大小">' + B.icon('image') + '<span id="val"></span>';
+  var demo = document.getElementById('demo');
+  demo.innerHTML = B.html.cell(B.demo.byName('chest_concept.png'), { hideName: true });
+  B.slider(document.querySelector('.bb-slider'), function (v) {
+    document.getElementById('val').textContent = v + 'px';
+    demo.style.width = Math.round(v * 0.55) + 'px';
+  });
+</script>
+</body>
+</html>

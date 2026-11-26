@@ -1,0 +1,43 @@
+<!-- @dsCard group="基础" height=300 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Motion — preview</title>
+<style>
+  body { padding: var(--space-5); display: grid; gap: var(--space-3); }
+  .hint { color: var(--ink-3); font-size: 11px; line-height: 16px; max-width: 640px; }
+  #track { position: relative; height: 132px; border-radius: var(--radius-lg); background: var(--surface-well); overflow: hidden; touch-action: none; }
+  .stop { position: absolute; top: 50%; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: var(--radius-md); border: 1px dashed var(--line-control); opacity: .5; }
+  #card { position: absolute; top: 50%; left: 0; width: 96px; margin: -48px 0 0 -48px; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-raised); box-shadow: var(--shadow-raise); cursor: grab; will-change: transform; }
+  #card[data-held] { cursor: grabbing; box-shadow: var(--shadow-drag); }
+  #card .bb-cell { padding: 0; pointer-events: none; }
+  #read { color: var(--ink-2); font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+</style></head>
+<body>
+<div id="track"><i class="stop"></i><i class="stop"></i><i class="stop"></i><div id="card"></div></div>
+<div id="read">阻尼 1.0 · response 0.4 · 速度 0 px/s</div>
+<script>
+  var B = Bowerbird, track = document.getElementById('track'), card = document.getElementById('card'), read = document.getElementById('read');
+  card.innerHTML = B.html.cell(B.demo.byName('chest_concept.png'), { hideName: true });
+  var stops = [], x = 0, grab = 0, held = false, tr = B.tracker();
+  var sp = B.spring({ damping: 1, response: 0.4, onUpdate: function (v) { x = v; card.style.transform = 'translateX(' + v + 'px)'; } });
+  function layout() { var w = track.clientWidth; stops = [w * 0.18, w * 0.5, w * 0.82]; [].forEach.call(track.querySelectorAll('.stop'), function (s, i) { s.style.left = stops[i] + 'px'; }); if (!held) sp.jump(stops[1]); }
+  layout(); window.addEventListener('resize', layout);
+  card.addEventListener('pointerdown', function (e) { card.setPointerCapture(e.pointerId); sp.stop(); held = true; card.setAttribute('data-held', ''); grab = e.clientX - x; tr.reset(); tr.add(e); });
+  card.addEventListener('pointermove', function (e) {
+    if (!held) return; tr.add(e);
+    var nx = e.clientX - grab, lo = stops[0], hi = stops[2], w = track.clientWidth;
+    if (nx < lo) nx = lo + B.rubberband(nx - lo, w); else if (nx > hi) nx = hi + B.rubberband(nx - hi, w);
+    x = nx; sp.jump(nx);
+  });
+  function release() {
+    if (!held) return; held = false; card.removeAttribute('data-held');
+    var v = tr.velocity().x, end = x + B.project(v);
+    var target = stops.reduce(function (a, s) { return Math.abs(s - end) < Math.abs(a - end) ? s : a; });
+    var flick = Math.abs(v) > 300;
+    sp.set(target, { velocity: v, damping: flick ? 0.8 : 1 });
+    read.textContent = '阻尼 ' + (flick ? '0.8' : '1.0') + ' · response 0.4 · 松手速度 ' + Math.round(v) + ' px/s · 预测终点 ' + Math.round(end) + ' → 落位 ' + Math.round(target);
+  }
+  card.addEventListener('pointerup', release); card.addEventListener('pointercancel', release);
+</script>
+</body>
+</html>

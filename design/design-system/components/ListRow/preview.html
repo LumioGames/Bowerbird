@@ -1,0 +1,33 @@
+<!-- @dsCard group="导航" height=560 -->
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>ListRow — preview</title>
+<style>
+  html, body { height: 100%; }
+  body { display: grid; grid-template-columns: var(--size-sidebar) minmax(0, 1fr); background: var(--surface-canvas); }
+  #side { padding: var(--space-2); background: var(--surface-panel); box-shadow: inset -1px 0 0 var(--line-hairline); overflow: auto; }
+  #rel { padding: var(--space-5); max-width: 420px; }
+  #rel h4 { margin: 0 0 var(--space-1); padding-left: var(--space-2); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
+  #rel h4:not(:first-child) { margin-top: var(--space-4); }
+  .bb-row .bb-stage, .bb-row .bb-review, .bb-row .bb-issue { flex: none; }
+</style></head>
+<body>
+<div id="side"></div>
+<div id="rel"></div>
+<script>
+  var B = Bowerbird, H = B.html, D = B.demo;
+  document.getElementById('side').innerHTML = D.sidebar('chest');
+  function row(n, extra) { var a = D.byName(n); return H.row({ thumb: a.art ? D.art(a.art, a) : B.icon(H.labels.KIND_ICON[a.kind]), label: a.name, sub: extra, trailing: (a.issue ? H.issue(a.issue) : '') + H.stage(a.stage) + H.review(a.review) }); }
+  document.getElementById('rel').innerHTML =
+    '<h4>上游 · 来源</h4>' + row('chest_high.blend', '导出 · user:lin · 11 月 24 日') +
+    '<h4>引用</h4>' + row('chest_basecolor.png', '基础色 · 1024²') + row('chest_normal.png', '法线 · 1024²') + row('chest_orm.png', 'ORM · 1024²') +
+    '<h4>下游</h4>' + row('chest_icon.png', '渲染 · agent:modeler · 11 月 21 日') +
+    '<h4>归属</h4>' + row('chest.md', '设计对象「宝箱」');
+  document.addEventListener('click', function (e) {
+    var r = e.target.closest('.bb-row'); if (!r) return;
+    [].forEach.call(r.closest('#side, #rel').querySelectorAll('.bb-row[aria-selected]'), function (x) { x.removeAttribute('aria-selected'); });
+    r.setAttribute('aria-selected', 'true');
+  });
+</script>
+</body>
+</html>

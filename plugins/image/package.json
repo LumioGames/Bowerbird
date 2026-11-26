@@ -1,0 +1,76 @@
+{
+  "name": "@bowerbird/plugin-image",
+  "version": "0.1.0",
+  "description": "PNG, JPG, WebP, GIF, SVG, AVIF: probe, server thumbnails, viewer, compare",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LumioGames/Bowerbird.git",
+    "directory": "plugins/image"
+  },
+  "homepage": "https://github.com/LumioGames/Bowerbird#readme",
+  "bugs": {
+    "url": "https://github.com/LumioGames/Bowerbird/issues"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b && bowerbird-plugin-build",
+    "typecheck": "tsc -b"
+  },
+  "bowerbird": {
+    "id": "bowerbird.image",
+    "displayName": "图片",
+    "description": "PNG、JPG、WebP、GIF、SVG、AVIF：读取信息、服务端缩略图、查看器、对比",
+    "apiVersion": 1,
+    "server": "./dist/server.js",
+    "web": "./dist/web.js",
+    "contributes": {
+      "formats": [
+        {
+          "id": "image",
+          "displayName": "图片",
+          "extensions": [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".gif",
+            ".svg",
+            ".avif"
+          ],
+          "priority": 100,
+          "thumbnail": "server"
+        }
+      ]
+    },
+    "l10n": {
+      "en": {
+        "图片": "Image",
+        "PNG、JPG、WebP、GIF、SVG、AVIF：读取信息、服务端缩略图、查看器、对比": "PNG, JPG, WebP, GIF, SVG, AVIF: probe, server thumbnails, viewer, compare"
+      },
+      "ja": {
+        "图片": "画像",
+        "PNG、JPG、WebP、GIF、SVG、AVIF：读取信息、服务端缩略图、查看器、对比": "PNG、JPG、WebP、GIF、SVG、AVIF：情報の読み取り、サーバー側のサムネイル、ビューア、比較"
+      },
+      "ko": {
+        "图片": "이미지",
+        "PNG、JPG、WebP、GIF、SVG、AVIF：读取信息、服务端缩略图、查看器、对比": "PNG, JPG, WebP, GIF, SVG, AVIF: 정보 읽기, 서버 썸네일, 뷰어, 비교"
+      }
+    }
+  },
+  "dependencies": {
+    "@bowerbird/plugin-sdk": "workspace:*",
+    "sharp": "0.34.5"
+  },
+  "devDependencies": {
+    "@bowerbird/plugin-build": "workspace:*",
+    "@bowerbird/schema": "workspace:*",
+    "@types/react": "19.3.2",
+    "gifuct-js": "2.1.2",
+    "lucide-react": "1.80.0",
+    "react": "19.2.9"
+  }
+}

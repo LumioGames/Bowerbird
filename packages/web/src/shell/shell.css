@@ -1,0 +1,66 @@
+/*
+ * Motion and the few looks Tailwind utilities cannot say on their own (keyframes, an animated angle, masks).
+ * Values are design-system tokens; the look follows the prototype (design/prototype/app.css, bb/bundle.css).
+ * Kept in the components layer so utilities on the same element still win.
+ */
+@property --bb-beam-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+@keyframes bb-materialize { from { opacity: 0; transform: scale(0.94); filter: blur(var(--blur-arrive)); } }
+@keyframes bb-fade { from { opacity: 0; } }
+@keyframes bb-fade-out { to { opacity: 0; } }
+@keyframes bb-dialog { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
+@keyframes bb-arrive { from { opacity: 0; transform: translateY(6px); filter: blur(var(--blur-arrive)); } }
+@keyframes bb-rise { from { opacity: 0; transform: translateY(16px) scale(0.96); } }
+@keyframes bb-beam { to { --bb-beam-a: 360deg; } }
+@keyframes bb-skel { 50% { opacity: 0.45; } }
+@keyframes bb-pulse-row { 30% { background: var(--warning-soft); } }
+@keyframes bb-spin { to { transform: rotate(360deg); } }
+
+@layer components {
+  /* a light travels the edge while the pipeline works on it (Magic UI "Border Beam", one neutral ink) */
+  .bb-beam {
+    position: absolute; inset: 0; padding: 1.5px; border-radius: inherit; pointer-events: none;
+    background: conic-gradient(from var(--bb-beam-a), transparent 0 68%, var(--ink-2) 92%, var(--ink-1) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: bb-beam 2.4s linear infinite;
+  }
+  /* a thumbnail arrives: fade, de-blur and rise together (Magic UI "Blur Fade") */
+  .bb-arrive { animation: bb-arrive var(--duration-arrive) var(--ease-out) both; }
+  /* transparent pixels show a checkerboard */
+  .bb-checker { background: conic-gradient(var(--checker-b) 25%, var(--checker-a) 0 50%, var(--checker-b) 0 75%, var(--checker-a) 0) 0 0 / 16px 16px; }
+  /* empty states sit on a faint dot pattern (Magic UI "Dot Pattern") */
+  .bb-dots { position: relative; overflow: hidden; }
+  .bb-dots::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(circle at center, var(--fill-press) 1px, transparent 1.5px); background-size: 16px 16px;
+    -webkit-mask-image: radial-gradient(ellipse 60% 70% at center, #000 10%, transparent 75%); mask-image: radial-gradient(ellipse 60% 70% at center, #000 10%, transparent 75%);
+  }
+  .bb-dots > * { position: relative; }
+  /* a bundle asset is drawn as a small stack of sheets */
+  .bb-bundle-stack { overflow: visible !important; box-shadow: 5px -5px 0 -1px var(--surface-raised), 10px -10px 0 -2px var(--fill-press); }
+  .bb-bundle-stack > * { border-radius: inherit; }
+  /* a document cell shows its first lines, fading out at the bottom */
+  .bb-doc-fade { -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+  /* the issues count moved: flash the row twice */
+  .bb-pulse { animation: bb-pulse-row 1.4s var(--ease-out) 2; }
+  /* the tool bar is a translucent layer; content scrolls under it and fades at its edge */
+  .bb-chrome { background: var(--material-chrome); -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%); backdrop-filter: blur(var(--blur-chrome)) saturate(180%); }
+  .bb-chrome-fade::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px; background: linear-gradient(var(--material-chrome), transparent); opacity: 0.7; pointer-events: none; }
+  /* search hits */
+  .bb-hit mark { background: var(--warning-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+  .bb-scroll-thin { scrollbar-width: thin; }
+  .bb-no-scrollbar { scrollbar-width: none; }
+  .bb-no-scrollbar::-webkit-scrollbar { display: none; }
+  .bb-spin { animation: bb-spin 1.2s linear infinite; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-beam { animation: none; background: var(--ink-3); }
+  .bb-arrive { animation: bb-fade var(--duration-fade) ease both; }
+  .bb-spin { animation: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bb-chrome { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--surface-panel); }
+  .bb-chrome-fade::after { display: none; }
+}

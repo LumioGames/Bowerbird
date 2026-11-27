@@ -38,7 +38,7 @@ test.describe('第一次打开：还没有资产库', () => {
     await expect(page.getByText('把游戏资产放在一个文件夹里管理：浏览、预览、校验、追溯，人和 Agent 都能用。')).toBeVisible()
     const open = page.getByRole('button', { name: '打开文件夹' })
     const create = page.getByRole('button', { name: '新建资产库' })
-    await expect(open).toHaveAccessibleDescription('把一个已有的文件夹作为资产库。里面的文件会被登记：每个文件旁边写一个 .bmeta，原文件不改动。')
+    await expect(open).toHaveAccessibleDescription('把一个已有的文件夹作为资产库。只读取里面的文件，不改动它们；给文件记下标签、关系或出处后，它旁边才会多一个 .bmeta。')
     await expect(create).toHaveAccessibleDescription('新建一个空文件夹作为资产库。')
     const [a, b] = [await open.boundingBox(), await create.boundingBox()]
     expect(Math.round(a!.width)).toBe(Math.round(b!.width))
@@ -107,8 +107,9 @@ test.describe('第一次打开：还没有资产库', () => {
     // nothing written before 开始
     expect(fs.readdirSync(loose).filter(n => n.endsWith('.bmeta'))).toEqual([])
     await first.getByRole('button', { name: '开始' }).click()
-    await expect(toast(page, '已登记 3 个文件')).toBeVisible({ timeout: 30_000 })
-    expect(fs.readdirSync(loose).filter(n => n.endsWith('.bmeta')).sort()).toEqual(['lantern.glb.bmeta', 'lantern.md.bmeta', 'lantern_concept.png.bmeta'])
+    await expect(toast(page, '已读取 3 个文件')).toBeVisible({ timeout: 30_000 })
+    // the files are only read: no .bmeta beside a file nobody said anything about (ADR-067)
+    expect(fs.readdirSync(loose).filter(n => n.endsWith('.bmeta'))).toEqual([])
 
     // back to the chooser from the library menu: the folder is marked as added
     await sidebar(page).getByRole('button', { name: 'loose' }).click()

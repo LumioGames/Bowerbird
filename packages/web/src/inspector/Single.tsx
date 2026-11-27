@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { STAGES, REVIEW_STATUSES, type AssetDetail, type AssetSummary, type RelationView, type ViewName } from '@bowerbird/schema'
+import { STAGES, REVIEW_STATUSES, isMakingRelation, type AssetDetail, type AssetSummary, type RelationView, type ViewName } from '@bowerbird/schema'
 import { Button, cn, DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, Textarea } from '@bowerbird/plugin-sdk/web'
 import { AssetThumb, DocCard } from '../components/AssetThumb'
 import { CopyText, FilterChip, Kv, Row, Section, TagChip, TagInput } from '../components/blocks'
@@ -12,6 +12,7 @@ import { getLocale, t } from '../lib/i18n'
 import { fmtActor, fmtDateTime, fmtRelative, fmtSize } from '../lib/format'
 import { kbd } from '../lib/platform'
 import { paramsText } from '../lib/params'
+import { provenanceInput } from '../lib/provenance'
 import { MenuEntries } from '../overlays/menu'
 import { toast, toastError } from '../overlays/toast'
 import { usePluginRegistry, PluginSlot } from '../plugins/registry'
@@ -24,7 +25,8 @@ import { pluginText } from '../plugins/text'
 /**
  * One asset in the inspector, top to bottom (web-shell.md 检查器 table, pages.md): thumbnail (click → quick look),
  * name (edited in place), issue banner, 基本, 描述, 包内文件, 标签, 阶段与校验 (latest verdict: who, when, comment),
- * 技术信息 (a turnaround's grid:「格子：2 行 2 列 · 正面 侧面 / 背面 顶面」), 关系, 生产记录, 版本, plugin sections.
+ * 技术信息 (a turnaround's grid:「格子：2 行 2 列 · 正面 侧面 / 背面 顶面」), 关系, 出处 (how it was made, ADR-070), 版本,
+ * plugin sections.
  */
 export function SingleInspector({ asset: a }: { asset: AssetDetail }) {
   const reg = usePluginRegistry()
@@ -80,7 +82,7 @@ export function SingleInspector({ asset: a }: { asset: AssetDetail }) {
       </Section>
       <TechSection asset={a} labels={fv?.view.techLabels} rows={fv?.view.techRows?.bind(fv.view)} by={a.plugin ?? undefined} />
       <Relations asset={a} />
-      {a.record && <RecordSection asset={a} />}
+      {a.provenance && <ProvenanceSection asset={a} />}
       {a.versions.length > 0 && (
         <Section title={t('insp.versions')} count={a.versions.length} defaultCollapsed id="insp.versions">
           {a.versions.map((v, i) => ({ v, n: i + 1 })).reverse().map(({ v, n }) => (
@@ -208,11 +210,12 @@ function TechSection({ asset: a, labels, rows: rowsOf, by }: {
 }
 
 /* ── relations, as lists: each group folds, each row jumps to the other asset or drops the relation ── */
-type Group = 'up' | 'down' | 'uses' | 'usedBy' | 'belongs' | 'members' | string
+type Group = 'up' | 'down' | 'refs' | 'refdBy' | 'uses' | 'usedBy' | 'belongs' | 'members' | string
 const groupOpen = new Map<string, boolean>()
 
 function groupOf(r: RelationView, outgoing: boolean): Group {
   if (r.type === 'source') return outgoing ? 'up' : 'down'
+  if (r.type === 'reference') return outgoing ? 'refs' : 'refdBy'
   if (r.type === 'uses') return outgoing ? 'uses' : 'usedBy'
   if (r.type === 'belongs') return outgoing ? 'belongs' : 'members'
   return (outgoing ? 'out:' : 'in:') + r.type
@@ -225,7 +228,7 @@ function Relations({ asset: a }: { asset: AssetDetail }) {
   const groups = new Map<Group, Array<{ r: RelationView; out: boolean }>>()
   for (const r of a.relations.outgoing) { const g = groupOf(r, true); groups.set(g, [...(groups.get(g) ?? []), { r, out: true }]) }
   for (const r of a.relations.incoming) { const g = groupOf(r, false); groups.set(g, [...(groups.get(g) ?? []), { r, out: false }]) }
-  const order: Group[] = ['up', 'down', 'uses', 'usedBy', 'belongs', 'members', ...[...groups.keys()].filter(k => k.includes(':'))]
+  const order: Group[] = ['up', 'down', 'refs', 'refdBy', 'uses', 'usedBy', 'belongs', 'members', ...[...groups.keys()].filter(k => k.includes(':'))]
   const title = (g: Group) => {
     if (!g.includes(':')) return t('relg.' + g)
     const [dir, type] = g.split(':') as [string, string]
@@ -240,7 +243,7 @@ function Relations({ asset: a }: { asset: AssetDetail }) {
       const fresh = await api.relations.remove(lib, owner, ref)
       if (out) qc.setQueryData(qk.asset(lib, a.id), fresh); else void qc.invalidateQueries({ queryKey: qk.asset(lib, a.id) })
       void qc.invalidateQueries({ queryKey: qk.asset(lib, out ? r.to : r.from) })
-      toast({ title: t('rel.deleted'), undo: async () => { await api.relations.add(lib, owner, { ...ref, ...(r.note ? { note: r.note } : {}), ...(r.record ? { record: r.record } : {}) }).catch(toastError); void qc.invalidateQueries({ queryKey: ['lib', lib, 'asset'] }) } })
+      toast({ title: t('rel.deleted'), undo: async () => { await api.relations.add(lib, owner, { ...ref, ...(r.note ? { note: r.note } : {}), ...(r.role ? { role: r.role } : {}) }).catch(toastError); void qc.invalidateQueries({ queryKey: ['lib', lib, 'asset'] }) } })
     } catch (e) { toastError(e) }
   }
   const goTo = (other: AssetSummary) => {
@@ -296,17 +299,20 @@ function Relations({ asset: a }: { asset: AssetDetail }) {
 }
 
 /**
- * A relation row's second line (prototype data.js noteOf): a source relation says how the downstream one was made and
- * by whom (「导出 · user:lin」, from its production record), else「来源」; a uses relation its note and the slot written
- * in the file (「基础色 · chest_basecolor.png」), else「引用」; belongs says「设计对象」going out and「归属」coming in.
+ * A relation row's second line (prototype data.js noteOf): a source / reference relation says how the downstream one
+ * was made and by whom (「导出 · user:lin」, from its provenance), else its role or「来源」/「参考」; a uses relation its
+ * note and the slot written in the file (「基础色 · chest_basecolor.png」), else「引用」; belongs says「设计对象」going out
+ * and「归属」coming in.
  */
 function RelSub({ lib, asset: a, r, out }: { lib: string; asset: AssetDetail; r: RelationView; out: boolean }) {
-  const own = r.record && a.record?.id === r.record ? a.record : null
-  const rec = useQuery({ queryKey: qk.record(lib, r.record ?? ''), queryFn: () => api.records.get(lib, r.record!), enabled: r.type === 'source' && !!r.record && !own, staleTime: 60_000 })
-  if (r.type === 'source') {
-    const record = own ?? rec.data?.record
-    if (record) return <>{methodName(record.method)} · {fmtActor(record.by)}</>
-    return r.record && rec.isPending ? null : <>{t('rel.type.source')}</>
+  const making = isMakingRelation(r.type)
+  /* going out, this asset is the one made; coming in, the other one is (its provenance is on its own detail) */
+  const other = useQuery({ queryKey: qk.asset(lib, r.from), queryFn: () => api.assets.get(lib, r.from), enabled: making && !out, staleTime: 60_000 })
+  if (making) {
+    const prov = out ? a.provenance : other.data?.provenance
+    const role = r.role ? ` · ${r.role}` : ''
+    if (prov) return <>{methodName(prov.method)} · {fmtActor(prov.by)}{role}</>
+    return !out && other.isPending ? null : <>{r.role || t(`rel.type.${r.type}`)}</>
   }
   if (r.type === 'uses') return <>{r.note || t('rel.type.uses')}{r.slot ? ` · ${r.slot}` : ''}</>
   if (r.type === 'belongs') return <>{t(out ? 'rel.designObject' : 'rel.belongsIn')}</>
@@ -326,37 +332,48 @@ function RowLink({ onClick, children }: { onClick: () => void; children: React.R
   )
 }
 
-function RecordSection({ asset: a }: { asset: AssetDetail }) {
+/**
+ * 出处 (ADR-070): how the asset was made — method, tool, plugin, who and when, parameters, its inputs (its source and
+ * reference relations, by role) and the prompt. The note is part of the provenance and is edited in place (Enter saves,
+ * Esc cancels): the whole provenance is said again with the new note (ADR-068), and the toast undoes it.
+ */
+function ProvenanceSection({ asset: a }: { asset: AssetDetail }) {
   const { lib, qc } = rt()
-  const r = a.record!
-  const [note, setNote] = React.useState('')
-  const methodText = r.plugin || r.method.includes('/') ? <span className="font-mono text-[11px]">{r.method}</span> : methodName(r.method)
-  const nameOf = (id: string) => a.relations.outgoing.find(x => x.to === id)?.target?.name ?? a.relations.outgoing.find(x => x.to === id)?.targetName ?? id.slice(-8)
-  const params = paramsText(r.method, r.params)
-  const add = async () => {
-    if (!note.trim()) return
-    try { await api.records.addNote(lib, r.id, note.trim()); setNote(''); void qc.invalidateQueries({ queryKey: qk.asset(lib, a.id) }); toast({ title: t('rec.noteAdded') }) } catch (e) { toastError(e) }
+  const p = a.provenance!
+  const [note, setNote] = React.useState(p.note ?? '')
+  const cancelled = React.useRef(false)
+  React.useEffect(() => { setNote(p.note ?? '') }, [a.id, p.note])
+  const methodText = p.plugin || p.method.includes('/') ? <span className="font-mono text-[11px]">{p.method}</span> : methodName(p.method)
+  const inputs = a.relations.outgoing.filter(r => isMakingRelation(r.type) && r.role)
+  const params = paramsText(p.method, p.params)
+  const write = async (text: string) => {
+    const r = await api.assets.patch(lib, a.id, { provenance: { ...provenanceInput(p), note: text || undefined } })
+    qc.setQueryData(qk.asset(lib, a.id), r.asset)
+  }
+  const save = async () => {
+    if (cancelled.current) { cancelled.current = false; return }
+    const text = note.trim(), was = p.note ?? ''
+    if (text === was) { setNote(was); return }
+    try {
+      await write(text)
+      toast({ title: t(text ? 'rec.noteSaved' : 'rec.noteCleared'), undo: async () => { await write(was).catch(toastError) } })
+    } catch (e) { setNote(was); toastError(e) }
   }
   return (
-    <Section title={t('insp.record')} id="insp.record">
+    <Section title={t('insp.provenance')} id="insp.provenance">
       <Kv rows={[
         [t('rec.method'), methodText],
-        r.tool ? [t('rec.tool'), r.tool] : null,
-        r.plugin ? [t('rec.plugin'), <span className="font-mono text-[11px]">{r.plugin}</span>] : null,
-        [t('rec.by'), <span className="font-mono text-[11px]">{fmtActor(r.by)}</span>],
+        p.tool ? [t('rec.tool'), p.tool] : null,
+        p.plugin ? [t('rec.plugin'), <span className="font-mono text-[11px]">{p.plugin}</span>] : null,
+        [t('rec.by'), <><span className="font-mono text-[11px]">{fmtActor(p.by)}</span> · {fmtDateTime(p.at)}</>],
         params ? [t('rec.params'), params] : null,
-        ...(r.inputs ?? []).map(x => [x.role ?? '—', <span className="font-mono text-[11px]">{nameOf(x.id)}</span>] as [string, React.ReactNode])
+        ...inputs.map(x => [x.role!, <span className="font-mono text-[11px]">{x.target?.name ?? x.targetName ?? x.to.slice(-8)}</span>] as [string, React.ReactNode])
       ]} />
-      {r.prompt && <pre className="m-0 cursor-text rounded-sm bg-surface-well p-2 font-mono text-[11px] leading-4 whitespace-pre-wrap text-ink-2 select-text">{r.prompt}</pre>}
-      {(r.notes ?? []).map((n, i) => (
-        <p key={i} className="m-0 text-[12px] text-ink-2"><span className="font-mono text-[11px]">{fmtActor(n.by)}</span> · {fmtDateTime(n.at)}<br /><span className="text-ink-1">{n.text}</span></p>
-      ))}
-      <div className="flex items-center gap-1">
-        <input value={note} onChange={e => setNote(e.target.value)} placeholder={t('rec.notePh')} aria-label={t('rec.addNote')}
-          onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') void add() }}
-          className="h-[22px] min-w-0 flex-1 border-0 bg-transparent px-1 text-[12px] text-ink-1 outline-none placeholder:text-ink-3" />
-        {note.trim() && <Button size="sm" onClick={() => void add()}>{t('rec.addNote')}</Button>}
-      </div>
+      {p.prompt && <pre className="m-0 cursor-text rounded-sm bg-surface-well p-2 font-mono text-[11px] leading-4 whitespace-pre-wrap text-ink-2 select-text">{p.prompt}</pre>}
+      <input value={note} onChange={e => setNote(e.target.value)} placeholder={t('rec.notePh')} aria-label={t('rec.notes')}
+        onBlur={() => void save()}
+        onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { cancelled.current = true; setNote(p.note ?? ''); (e.target as HTMLInputElement).blur() } }}
+        className="-mx-1 h-[22px] min-w-0 rounded-xs border-0 bg-transparent px-1 text-[12px] text-ink-1 outline-none placeholder:text-ink-3 hover:bg-fill-hover focus:bg-surface-well" />
     </Section>
   )
 }

@@ -83,3 +83,27 @@ describe('library handle', () => {
     expect(await t.svc.pluginLibrarySettings('test.model')).toEqual({ env: 'studio' })
   })
 })
+
+describe('one writer per library (ADR-069)', () => {
+  it('refuses to open a library another running process holds; takes over a lock its process left behind', async () => {
+    const { default: fsm } = await import('node:fs')
+    const { default: pathm } = await import('node:path')
+    const t = await makeLib()
+    const dataDir = pathm.join(t.home, 'libraries', t.id)
+    await t.hub.close()
+    // a live process that is not this one (the test runner's parent)
+    fsm.writeFileSync(pathm.join(dataDir, 'writer.lock'), JSON.stringify({ pid: process.ppid }))
+    await expect(t.reopen()).rejects.toMatchObject({ code: 'conflict' })
+    // its process is gone: taken over
+    fsm.writeFileSync(pathm.join(dataDir, 'writer.lock'), JSON.stringify({ pid: 2 ** 22 + 12345 }))
+    await t.reopen()
+    expect(JSON.parse(fsm.readFileSync(pathm.join(dataDir, 'writer.lock'), 'utf8')).pid).toBe(process.pid)
+    // a second hub of this process on the same library shares the lock; it goes when the last one closes
+    const second = await createHubWith({ home: t.home, builtinPluginDirs: [], watch: false, log: silentLogger }, factories(), { stableMs: 0 })
+    await second.library(t.id)
+    await second.close()
+    expect(fsm.existsSync(pathm.join(dataDir, 'writer.lock'))).toBe(true)
+    await t.close()
+    expect(fsm.existsSync(pathm.join(dataDir, 'writer.lock'))).toBe(false)
+  })
+})

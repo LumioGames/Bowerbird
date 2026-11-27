@@ -59,15 +59,15 @@ describe('更换对方… (ADR-018)', () => {
 })
 
 describe('删除这条关系', () => {
-  it('removes it and the undo puts back the same type, slot, note and record', async () => {
+  it('removes it and the undo puts back the same type, slot, note and role', async () => {
     fakeApi.relations.remove.mockResolvedValue({})
     fakeApi.relations.add.mockResolvedValue({})
-    await removeRelation(qc, 'lib1', { ...rel, record: 'rec_1' })
-    expect(fakeApi.relations.remove).toHaveBeenCalledWith('lib1', glb, { type: 'uses', to: base, slot: 'chest_basecolor.png' })
+    await removeRelation(qc, 'lib1', { ...rel, type: 'source', role: '参考图' })
+    expect(fakeApi.relations.remove).toHaveBeenCalledWith('lib1', glb, { type: 'source', to: base, slot: 'chest_basecolor.png' })
     const t = vi.mocked(toast).mock.calls[0]![0]
     expect(t.title).toBe('已删除这条关系')
     await t.undo!()
-    expect(fakeApi.relations.add).toHaveBeenCalledWith('lib1', glb, { type: 'uses', to: base, slot: 'chest_basecolor.png', note: '基础色', record: 'rec_1' })
+    expect(fakeApi.relations.add).toHaveBeenCalledWith('lib1', glb, { type: 'source', to: base, slot: 'chest_basecolor.png', note: '基础色', role: '参考图' })
   })
 
   it('an undo that fails says so (「没有撤销：…」) instead of failing silently', async () => {

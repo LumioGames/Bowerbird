@@ -4,7 +4,7 @@ import { imageCompareModes, REASON_ASPECT } from './rules.js'
 import { translate } from '../i18n.js'
 import { techLabels } from '../index.js'
 
-const A = (id: string, w: number, h: number) => ({ id, format: 'image', tech: { width: w, height: h }, record: null, relations: { outgoing: [], incoming: [] } }) as never
+const A = (id: string, w: number, h: number) => ({ id, format: 'image', tech: { width: w, height: h }, provenance: null, relations: { outgoing: [], incoming: [] } }) as never
 
 afterEach(() => { document.documentElement.lang = '' })
 

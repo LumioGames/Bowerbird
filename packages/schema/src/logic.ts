@@ -1,7 +1,7 @@
 /**
  * Pure rules shared by kernel, shell, CLI and fixtures. No I/O here.
  */
-import { BMETA_KEY_ORDER, FOLDER_META_KEY_ORDER, RECORD_KEY_ORDER, SIDECAR_SUFFIX, FOLDER_META_NAME, type Bmeta } from './disk.js'
+import { BMETA_KEY_ORDER, FOLDER_META_KEY_ORDER, PROVENANCE_KEY_ORDER, RECORD_KEY_ORDER, SIDECAR_SUFFIX, FOLDER_META_NAME, type Bmeta } from './disk.js'
 import type { ReviewStatus } from './primitives.js'
 
 /**
@@ -16,8 +16,11 @@ export function effectiveReview(meta: Pick<Bmeta, 'hash' | 'review'>): ReviewSta
   return r.status
 }
 
-/** Built-in relation types that record the counterpart's version. */
+/** Built-in relation types that record the counterpart's version (`reference` keeps no watch on it, ADR-073). */
 export function builtinTracksVersion(type: string): boolean { return type === 'source' }
+
+/** Relation types that say what an asset was made from: they carry `role` and the counterpart's hash (ADR-070, ADR-073). */
+export function isMakingRelation(type: string): boolean { return type === 'source' || type === 'reference' }
 
 /** Split `chest.png` into base `chest` and extension `.png`; dot-files and no-extension names keep everything in base. */
 export function splitName(name: string): { base: string; ext: string } {
@@ -66,7 +69,10 @@ function ordered(obj: Record<string, unknown>, order: readonly string[]): Record
 
 /** Serialize a .bmeta: fixed key order, two-space indent, trailing newline (library-format.md). */
 export function serializeBmeta(meta: Bmeta | Record<string, unknown>): string {
-  return JSON.stringify(ordered(meta as Record<string, unknown>, BMETA_KEY_ORDER), null, 2) + '\n'
+  const m = meta as Record<string, unknown>
+  const prov = m.provenance
+  const top = prov && typeof prov === 'object' && !Array.isArray(prov) ? { ...m, provenance: ordered(prov as Record<string, unknown>, PROVENANCE_KEY_ORDER) } : m
+  return JSON.stringify(ordered(top, BMETA_KEY_ORDER), null, 2) + '\n'
 }
 export function serializeFolderMeta(meta: Record<string, unknown>): string {
   return JSON.stringify(ordered(meta, FOLDER_META_KEY_ORDER), null, 2) + '\n'

@@ -37,8 +37,8 @@ describe('file watching', () => {
     // the big library still notices changes
     await new Promise(r => setTimeout(r, 500))
     big.write('d7/new.png', 'new file', -10)
-    await until(() => big.exists('d7/new.png.bmeta'))
-    expect(big.exists('d7/new.png.bmeta')).toBe(true)
+    await until(() => !!big.rowByPath('d7/new.png'))
+    expect(big.rowByPath('d7/new.png')).toBeDefined()
   }, 60_000)
 
   it('watches per directory up to a limit, then turns watching off and says so', async () => {
@@ -64,13 +64,13 @@ describe('file watching', () => {
     // the OS needs a moment before a new watch reports (macOS FSEvents streams start asynchronously)
     await new Promise(r => setTimeout(r, 500))
     t.write('a/y.png', 'y', -10)
-    await until(() => t.exists('a/y.png.bmeta'))
-    expect(t.exists('a/y.png.bmeta')).toBe(true)
+    await until(() => !!t.rowByPath('a/y.png'))
+    expect(t.rowByPath('a/y.png')).toBeDefined()
     fs.mkdirSync(t.abs('b'))
     await new Promise(r => setTimeout(r, 300))
     t.write('b/z.png', 'z', -10)
-    await until(() => t.exists('b/z.png.bmeta'))
-    expect(t.exists('b/z.png.bmeta')).toBe(true)
+    await until(() => !!t.rowByPath('b/z.png'))
+    expect(t.rowByPath('b/z.png')).toBeDefined()
   }, 30_000)
 
   it('notices deletions and folder moves', async () => {
@@ -78,8 +78,8 @@ describe('file watching', () => {
     t.write('m/a.png', 'a', -100)
     t.write('m/sub/b.png', 'b', -100)
     await t.scan()
-    const a = t.idOf('m/a.png')
-    const b = t.idOf('m/sub/b.png')
+    // with a .bmeta each: a folder move keeps their GUIDs, a deleted file becomes「文件缺失」
+    const [a, b] = await t.keep('m/a.png', 'm/sub/b.png')
     await new Promise(r => setTimeout(r, 500))
     fs.renameSync(t.abs('m'), t.abs('n'))
     await until(() => t.row(a)?.path === 'n/a.png' && t.row(b)?.path === 'n/sub/b.png')

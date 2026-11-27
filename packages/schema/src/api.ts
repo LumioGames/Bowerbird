@@ -5,7 +5,7 @@
  */
 import { z } from 'zod'
 import { Guid, Hash, ReviewStatus, Stage, ViewGrid, PipelineStage, ThumbVariant } from './primitives.js'
-import { FolderDefaults, LibrarySettings, ProductionRecord, TagDef } from './disk.js'
+import { FolderDefaults, LibrarySettings, TagDef } from './disk.js'
 import { Query, IssueType } from './query.js'
 import {
   ActionInfo, AssetDetail, AssetSummary, CreatorInfo, FolderNode, Issue, IssueLevel, JobInfo, LibraryInfo, LibraryRef, Lineage,
@@ -46,21 +46,22 @@ export const RelationInput = z.object({
   to: Guid,
   slot: z.string().optional(),
   note: z.string().optional(),
-  /** Existing record id (source relations only). */
-  record: z.string().optional()
+  /** What the counterpart was to the making of this asset (source / reference only), e.g. reference, mask. */
+  role: z.string().optional()
 })
 export type RelationInput = z.infer<typeof RelationInput>
 
-/** A production record as given by a client; the kernel adds id, input hashes, `plugin`, by and at. */
-export const RecordInput = z.object({
+/** How an asset was made, as a client says it (ADR-070); the kernel adds `by`, `at` and, for plugin outputs, `plugin`. */
+export const ProvenanceInput = z.object({
   method: z.string().min(1),
   tool: z.string().optional(),
   prompt: z.string().optional(),
   params: z.record(z.string(), z.unknown()).optional(),
-  inputs: z.array(z.object({ id: Guid, role: z.string().optional() })).optional(),
+  /** Outputs of one run share a batch id: the kernel gives every output of a plugin run the same one; `bb add` of several files makes one from what was said. */
+  batch: z.string().optional(),
   note: z.string().optional()
 })
-export type RecordInput = z.infer<typeof RecordInput>
+export type ProvenanceInput = z.infer<typeof ProvenanceInput>
 
 export const ON_CONFLICT = ['replace', 'keep-both', 'skip'] as const
 export const OnConflict = z.enum(ON_CONFLICT)
@@ -82,7 +83,7 @@ export const RegisterFields = z.object({
   tags: z.array(z.string()).optional(),
   description: z.string().optional(),
   relations: z.array(RelationInput).optional(),
-  record: z.union([RecordInput, z.string()]).optional(),
+  provenance: ProvenanceInput.optional(),
   views: ViewGrid.optional(),
   /** Review default override: `exempt` for review-free uploads. */
   review: z.enum(['pending', 'exempt']).optional(),
@@ -94,7 +95,6 @@ export const RegisterResponse = z.object({
   /** Null when skipped. */
   asset: AssetDetail.nullable(),
   skipped: z.boolean(),
-  recordId: z.string().nullable(),
   /** Tags not seen in the library before, each with similar existing tags (tag governance). */
   newTags: z.array(z.object({ tag: z.string(), similar: z.array(z.string()) }))
 })
@@ -140,9 +140,70 @@ export const AssetPatch = z.object({
   stage: Stage.optional(),
   fields: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   auxiliary: z.boolean().optional(),
-  views: ViewGrid.nullable().optional()
+  views: ViewGrid.nullable().optional(),
+  /** Set (or with null, clear) how the asset was made (ADR-070). */
+  provenance: ProvenanceInput.nullable().optional()
 })
 export type AssetPatch = z.infer<typeof AssetPatch>
+
+/**
+ * One asset's wanted information (ADR-068): the kernel compares it with what the asset has now and writes only the
+ * difference, so saying the same thing twice writes nothing. Absent keys stay as they are. `id` or `path` names the
+ * asset; a `path` may name a file the library only sees (no .bmeta yet, ADR-067) or one not scanned yet.
+ */
+export const ApplyItem = z.object({
+  id: Guid.optional(),
+  path: z.string().optional(),
+  stage: Stage.optional(),
+  /** Tags the asset has / does not have. */
+  tags: z.object({ add: z.array(z.string()).optional(), remove: z.array(z.string()).optional() }).optional(),
+  /** '' or null clears it. */
+  description: z.string().nullable().optional(),
+  /** `exempt` = review-free; `pending` = needs review (drops an exemption; a verdict of others is kept). */
+  review: z.enum(['pending', 'exempt']).optional(),
+  /** null clears it. */
+  provenance: ProvenanceInput.nullable().optional(),
+  /** Relations the asset has / does not have (a relation is its type, counterpart and slot). */
+  relations: z.object({
+    add: z.array(RelationInput).optional(),
+    remove: z.array(z.object({ type: z.string(), to: Guid, slot: z.string().optional() })).optional()
+  }).optional(),
+  views: ViewGrid.nullable().optional(),
+  /** Custom fields per namespace; null drops a namespace. */
+  fields: z.record(z.string(), z.record(z.string(), z.unknown()).nullable()).optional(),
+  auxiliary: z.boolean().optional()
+})
+export type ApplyItem = z.infer<typeof ApplyItem>
+
+export const ApplyRequest = z.object({
+  items: z.array(ApplyItem).min(1).max(10_000),
+  /** Compare only: report every change, write nothing. */
+  dryRun: z.boolean().optional()
+})
+export type ApplyRequest = z.infer<typeof ApplyRequest>
+
+export const ApplyChange = z.object({ field: z.string(), before: z.unknown(), after: z.unknown() })
+export type ApplyChange = z.infer<typeof ApplyChange>
+
+/** Every item is answered on its own: one failing item never stops the others. */
+export const ApplyResponse = z.object({
+  results: z.array(z.object({
+    index: z.number().int(),
+    id: Guid.nullable(),
+    path: z.string().nullable(),
+    /** Something changed (with dryRun: would change). */
+    changed: z.boolean(),
+    changes: z.array(ApplyChange),
+    error: z.object({ code: z.string(), message: z.string(), details: z.record(z.string(), z.unknown()).optional() }).optional()
+  })),
+  dryRun: z.boolean(),
+  newTags: z.array(z.object({ tag: z.string(), similar: z.array(z.string()) }))
+})
+export type ApplyResponse = z.infer<typeof ApplyResponse>
+
+/** 移出资产库：the asset's .bmeta goes to the trash, the file stays where it is (ADR-067). */
+export const UntrackResponse = z.object({ trashId: z.string().nullable(), referrers: z.array(Guid) })
+export type UntrackResponse = z.infer<typeof UntrackResponse>
 export const AssetPatchResponse = z.object({ asset: AssetDetail, newTags: RegisterResponse.shape.newTags })
 
 export const DeleteResponse = z.object({ trashId: z.string(), referrers: z.array(Guid) })
@@ -180,7 +241,7 @@ export type SummaryResponse = z.infer<typeof SummaryResponse>
 
 export const LineageQuery = z.object({
   direction: z.enum(['up', 'down', 'both']).default('up'),
-  types: z.array(z.string()).default(['source']),
+  types: z.array(z.string()).default(['source', 'reference']),
   depth: z.number().int().min(1).max(50).default(5)
 })
 export type LineageQuery = z.infer<typeof LineageQuery>
@@ -212,7 +273,7 @@ export const BatchResponse = z.object({
 })
 export type BatchResponse = z.infer<typeof BatchResponse>
 
-/* ───────────── relations & records ───────────── */
+/* ───────────── relations & provenance ───────────── */
 
 export const RelationRef = z.object({ type: z.string(), to: Guid, slot: z.string().optional() })
 export const RelationReplaceRequest = RelationRef.extend({ newTo: Guid })
@@ -224,10 +285,6 @@ export const RetargetResponse = z.object({
 })
 export type RetargetResponse = z.infer<typeof RetargetResponse>
 export const CycleDetails = z.object({ path: z.array(z.object({ id: Guid, name: z.string() })) })
-
-export const RecordCreateResponse = z.object({ id: z.string(), record: ProductionRecord })
-export const RecordResponse = z.object({ record: ProductionRecord, outputs: z.array(AssetSummary) })
-export const RecordNoteRequest = z.object({ text: z.string().min(1) })
 
 /* ───────────── folders, tags, views ───────────── */
 
@@ -467,7 +524,9 @@ export const ENDPOINTS = {
   asset: 'GET L/assets/:id',
   precheck: 'POST L/assets/precheck',
   register: 'POST L/assets',
+  apply: 'POST L/assets/apply',
   patch: 'PATCH L/assets/:id',
+  untrack: 'POST L/assets/:id/untrack',
   remove: 'DELETE L/assets/:id',
   content: 'POST L/assets/:id/content',
   move: 'POST L/assets/:id/move',
@@ -494,9 +553,6 @@ export const ENDPOINTS = {
   relationReplace: 'POST L/assets/:id/relations/replace',
   relationAck: 'POST L/assets/:id/relations/acknowledge',
   retarget: 'POST L/relations/retarget',
-  recordCreate: 'POST L/records',
-  record: 'GET L/records/:id',
-  recordNote: 'POST L/records/:id/notes',
   folders: 'GET L/folders',
   folderCreate: 'POST L/folders',
   folderPatch: 'PATCH L/folders',
@@ -550,9 +606,6 @@ export type RelationReplaceRequest = z.infer<typeof RelationReplaceRequest>
 export type RelationAckRequest = z.infer<typeof RelationAckRequest>
 export type RetargetRequest = z.infer<typeof RetargetRequest>
 export type CycleDetails = z.infer<typeof CycleDetails>
-export type RecordCreateResponse = z.infer<typeof RecordCreateResponse>
-export type RecordResponse = z.infer<typeof RecordResponse>
-export type RecordNoteRequest = z.infer<typeof RecordNoteRequest>
 export type FoldersResponse = z.infer<typeof FoldersResponse>
 export type FolderCreateRequest = z.infer<typeof FolderCreateRequest>
 export type FolderPatchRequest = z.infer<typeof FolderPatchRequest>

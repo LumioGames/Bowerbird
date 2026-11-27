@@ -128,17 +128,14 @@ export function LibraryChoices({ onPick, inDialog }: { onPick: (k: LibraryChoice
   )
 }
 
-/** First open of a folder that already has files: explain, then register with progress (can stop, resumes later). */
+/** First open of a folder that already has files: explain, then read them with progress (can stop, resumes later). */
 export async function firstOpenFlow(info: LibraryInfo): Promise<void> {
   const fo = info.firstOpen
   if (!fo) return
   const ok = await openDialog<boolean>(close => (
     <FormDialog size="wide" title={t('first.title', { path: info.root })} onClose={() => close(false)} primary={{ label: t('common.start'), onClick: () => close(true) }}>
       <p className="m-0 mb-3 text-ink-2"><b className="text-[20px] font-semibold tabular-nums text-ink-1">{fmtInt(fo.files)}</b> {t('first.countRest', { folders: fmtInt(fo.folders) })}</p>
-      <div className="flex items-center gap-1.5 rounded-md bg-surface-well px-3 py-2 text-ink-2">
-        <Icon name="file" size={12} className="text-ink-3" /><span className="font-mono text-[11px]">chest.glb</span>
-        <Icon name="file-plus" size={12} className="ml-3 text-accent-ink" /><span className="font-mono text-[11px]">chest.glb.bmeta</span>
-      </div>
+      {/* files are only read; a .bmeta appears beside a file once something is said about it (ADR-067) */}
       <p className="m-0 mt-2 leading-[19px] text-ink-2">{t('first.bmeta')}</p>
       {fo.unsupported.length > 0 && <>
         <h3 className="mt-4 mb-2 text-[13px] font-semibold text-ink-2">{t('first.unsupported')}</h3>
@@ -154,14 +151,15 @@ export async function firstOpenFlow(info: LibraryInfo): Promise<void> {
     </FormDialog>
   ))
   if (!ok) return
+  const startedAt = new Date().toISOString()
   try { await api.libraries.init(info.id) } catch (e) { toastError(e); return }
-  openClaimPanel(info, fo.unsupported.length)
+  openClaimPanel(info, fo.unsupported.length, startedAt)
 }
 
 /* the registration progress panel (bottom right, like uploads) */
-let claim: { info: LibraryInfo; needs: number } | null = null
+let claim: { info: LibraryInfo; needs: number; startedAt: string } | null = null
 const claimLs = new Set<() => void>()
-function openClaimPanel(info: LibraryInfo, needs: number) { claim = { info, needs }; claimLs.forEach(l => l()) }
+function openClaimPanel(info: LibraryInfo, needs: number, startedAt: string) { claim = { info, needs, startedAt }; claimLs.forEach(l => l()) }
 function closeClaimPanel() { claim = null; claimLs.forEach(l => l()) }
 /** This browser is registering a library's existing files (first open): the assets it creates are its own. */
 export function registering(libId: string): boolean { return claim?.info.id === libId }
@@ -173,10 +171,11 @@ export function ClaimPanel({ go }: { go: Go }) {
   React.useEffect(() => {
     if (!c) return
     setP({ done: 0, total: c.info.firstOpen?.files ?? 0, phase: 'walking' })
-    return onLibraryEvent((type, data) => {
-      if (type !== 'scan.progress') return
-      const s = data as { done: number; total: number; current?: string; phase: string; running: boolean }
+    let ended = false
+    const seen = (s: { done: number; total: number; current?: string; phase: string; running: boolean }) => {
+      if (ended) return
       setP({ done: s.done, total: s.total || c.info.firstOpen?.files || 0, ...(s.current ? { current: s.current } : {}), phase: s.phase })
+      if (s.phase === 'done' || s.phase === 'stopped') ended = true
       // what was registered is this browser's own doing: show it (grid, folder counts), no「新资产」pill
       if (s.phase === 'done' || s.phase === 'stopped') void qc.invalidateQueries({ queryKey: ['lib', c.info.id] })
       if (s.phase === 'done') {
@@ -189,7 +188,14 @@ export function ClaimPanel({ go }: { go: Go }) {
         closeClaimPanel()
         toast({ title: t('first.stopped', { n: fmtInt(s.done) }) })
       }
-    })
+    }
+    const off = onLibraryEvent((type, data) => { if (type === 'scan.progress') seen(data as Parameters<typeof seen>[0]) })
+    /* a small folder can be read before this panel listens (files are only indexed, ADR-067): ask once where it stands */
+    void api.libraries.get(c.info.id).then(info => {
+      const s = info.scan
+      if (!s.running && (s.phase === 'done' || s.phase === 'stopped') && (!s.finishedAt || s.finishedAt >= c.startedAt)) seen(s)
+    }).catch(() => { /* the events still come */ })
+    return () => { ended = true; off() }
   }, [c, go, qc])
   if (!c) return null
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0

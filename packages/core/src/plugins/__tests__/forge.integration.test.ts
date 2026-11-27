@@ -73,7 +73,7 @@ describe.skipIf(!built)('Forge test plugin (integration)', () => {
     expect(host.machineSettings('community.forge')).toEqual({ simulate: 'none' })
   })
 
-  it('creates through the pipeline: progress, pick page, outputs sharing one record', async () => {
+  it('creates through the pipeline: progress, pick page, outputs sharing one batch', async () => {
     const job = await pipe.startCreate('community.forge:image', { params: { prompt: '红色的卡通宝箱', count: 2, seed: 7 }, inputs: [], folder: 'ai' }, ctx)
     const waiting = await waitFor(job.id, j => !!j.action)
     expect(waiting.action).toMatchObject({ page: 'pick' })
@@ -86,11 +86,9 @@ describe.skipIf(!built)('Forge test plugin (integration)', () => {
     expect(done.status).toBe('done')
     expect(done.outputs).toHaveLength(2)
     expect(deps.registered).toHaveLength(2)
-    expect(deps.registered[0]!.req.record).toMatchObject({ method: 'community.forge/image', prompt: '红色的卡通宝箱' })
-    expect(deps.registered[0]!.ctx).toMatchObject({ actor: 'user:lin', pluginId: 'community.forge', pluginVersion: '0.4.0' })
-    expect(deps.registered[1]!.req.record).toBe('rec_1')
-    expect(deps.registered[1]!.ctx.recordId).toBe('rec_1')
-    expect(deps.records).toBe(1)
+    expect(deps.registered[0]!.req.provenance).toMatchObject({ method: 'community.forge/image', prompt: '红色的卡通宝箱' })
+    expect(deps.registered[0]!.ctx).toMatchObject({ actor: 'user:lin', pluginId: 'community.forge', pluginVersion: '0.4.0', batch: expect.stringMatching(/^bat_/) })
+    expect(deps.registered[1]!.ctx.batch).toBe(deps.registered[0]!.ctx.batch)
   })
 
   it('simulated failures fail the job and are counted as consecutive failures (not disabled)', async () => {

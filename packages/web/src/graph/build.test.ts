@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { LineageEdge, ProductionRecord } from '@bowerbird/schema'
+import type { LineageEdge, Provenance } from '@bowerbird/schema'
 import { buildGraph, cyclePath, readingOrder, GROUP_MEMBERS, GROUP_SIBLINGS, type GraphInput } from './build'
 import { gid, lineage, relation, summary } from '../pages/shared/test/fake'
 
 const tr = (k: string, p?: Record<string, string | number>) => (p ? `${k}:${JSON.stringify(p)}` : k)
 const src = (from: string, to: string, o: Partial<LineageEdge> = {}): LineageEdge => ({ type: 'source', from, to, broken: false, stale: false, ...o })
-const rec = (id: string, method = 'manual'): ProductionRecord => ({ id, method, by: 'agent:slicer', at: '2026-11-20T08:00:00.000Z' })
+const prov = (method = 'manual', batch?: string): Provenance => ({ method, ...(batch ? { batch } : {}), by: 'agent:slicer', at: '2026-11-20T08:00:00.000Z' })
 
 /* the chest chain from the prototype: concept → turnaround → high.blend → chest.glb → icon → icon_small → icon_tiny */
 const C = summary({ id: gid(1), name: 'chest_concept.png' })
@@ -47,23 +47,45 @@ describe('relation graph model', () => {
     expect(more.nodes.get(I2.id)!.more).toBeUndefined()
   })
 
-  it('folds more than 4 siblings from one production record into a group, and opens it as a frame', () => {
-    const r = rec('rec_slice', 'slice')
+  it('folds more than 4 siblings made in one run (same provenance batch) into a group, and opens it as a frame', () => {
     const kids = (k: number) => Array.from({ length: k }, (_, i) => summary({ id: gid(100 + i), name: `btn_${i}.png` }))
     const input = (k: number): GraphInput => ({
       center: G, up: lineage(G.id, [], []),
-      down: lineage(G.id, kids(k), kids(k).map(a => src(a.id, G.id, { record: r.id })), { records: { [r.id]: r } }),
+      down: lineage(G.id, kids(k), kids(k).map(a => src(a.id, G.id)), { provenance: Object.fromEntries(kids(k).map(a => [a.id, prov('slice', 'bat_slice')])) }),
       relations: { outgoing: [], incoming: [] }
     })
     const four = buildGraph(input(GROUP_SIBLINGS), { down: 2, open: {} }, tr)
     expect([...four.nodes.values()].filter(n => n.kind === 'asset').length).toBe(GROUP_SIBLINGS + 1)
     const five = buildGraph(input(GROUP_SIBLINGS + 1), { down: 2, open: {} }, tr)
-    const grp = five.nodes.get(`g:${G.id}:rec_slice`)!
+    const grp = five.nodes.get(`g:${G.id}:bat_slice`)!
     expect(grp.kind).toBe('group')
     expect(grp.items).toHaveLength(5)
     expect(grp.rec?.method).toBe('slice')
-    const open = buildGraph(input(5), { down: 2, open: { [`g:${G.id}:rec_slice`]: true } }, tr)
-    expect(open.nodes.get(`g:${G.id}:rec_slice`)!.kind).toBe('frame')
+    expect(grp.recOf).toBe(gid(100))
+    const open = buildGraph(input(5), { down: 2, open: { [`g:${G.id}:bat_slice`]: true } }, tr)
+    expect(open.nodes.get(`g:${G.id}:bat_slice`)!.kind).toBe('frame')
+    /* without a batch every sibling stands on its own */
+    const lone = buildGraph({ ...input(5), down: lineage(G.id, kids(5), kids(5).map(a => src(a.id, G.id))) }, { down: 2, open: {} }, tr)
+    expect([...lone.nodes.values()].filter(n => n.kind === 'group')).toHaveLength(0)
+  })
+
+  it('lays a reference out like a source (upstream, left) but as its own type, never stale', () => {
+    const shot = summary({ id: gid(60), name: 'shop_mockup.png' })
+    const input: GraphInput = {
+      center: T,
+      up: lineage(T.id, [C, shot], [src(T.id, C.id), src(T.id, shot.id, { type: 'reference', stale: true, role: '参考图' })], { provenance: { [T.id]: prov('ai-generate') } }),
+      down: lineage(T.id, [], []),
+      relations: { outgoing: [], incoming: [] }
+    }
+    const g = buildGraph(input, { down: 2, open: {} }, tr)
+    expect(g.nodes.get(shot.id)!.col).toBe(-1)
+    expect(g.nodes.get(shot.id)!.lane).toBe('main')
+    const e = g.edges.find(x => x.from === shot.id)!
+    expect(e.type).toBe('reference')
+    expect(e.stale).toBe(false)
+    expect(e.rel?.role).toBe('参考图')
+    /* the second line under an input says how the downstream asset was made */
+    expect(g.nodes.get(shot.id)!.sub).toBe('w2.method.ai-generate · agent:slicer')
   })
 
   it('groups more than 6 members of a design object', () => {
@@ -105,20 +127,23 @@ describe('relation graph model', () => {
     expect(g.edges.find(e => e.to === doc.id)!.vertical).toBe(true)
   })
 
-  it('puts a missing upstream on a placeholder and the record of an origin before the top', () => {
-    const r = rec('rec_concept', 'ai-generate')
+  it('puts a missing upstream on a placeholder and the provenance of an asset made from nothing before the top', () => {
     const input: GraphInput = {
       center: T,
-      up: lineage(T.id, [C], [src(T.id, C.id), src(T.id, gid(99), { broken: true })], { missing: [{ id: gid(99), name: 'old_concept.png', inTrash: true }] }),
+      up: lineage(T.id, [C], [src(T.id, C.id), src(T.id, gid(99), { broken: true })], { missing: [{ id: gid(99), name: 'old_concept.png', inTrash: true }], provenance: { [C.id]: prov('ai-generate'), [T.id]: prov('manual') } }),
       down: lineage(T.id, [], []),
-      relations: { outgoing: [], incoming: [] },
-      origins: { [C.id]: r }
+      relations: { outgoing: [], incoming: [] }
     }
     const g = buildGraph(input, { down: 2, open: {} }, tr)
     const miss = g.nodes.get(`miss:${T.id}:${gid(99)}`)!
     expect(miss.kind).toBe('missing')
     expect(miss.inTrash).toBe(true)
-    expect(g.nodes.get('rec:rec_concept')!.col).toBe(-2)
+    const r = g.nodes.get(`rec:${C.id}`)!
+    expect(r.col).toBe(-2)
+    expect(r.rec?.method).toBe('ai-generate')
+    expect(r.recOf).toBe(C.id)
+    /* an asset with inputs shows no provenance node of its own */
+    expect(g.nodes.has(`rec:${T.id}`)).toBe(false)
   })
 
   it('lists asset nodes left to right for quick look', () => {

@@ -39,7 +39,7 @@ type Decision = 'approved' | 'rejected' | 'skipped'
 interface Last { k: Decision; id: string; name: string; at: number; entry: UndoEntry }
 
 /**
- * 校验队列 `/review` (pages.md): one at a time — viewer on the left (mode 'review'), upstream, record and AI tags on
+ * 校验队列 `/review` (pages.md): one at a time — viewer on the left (mode 'review'), upstream, provenance and AI tags on
  * the right; 通过 (⌘↵ / Ctrl+Enter), 打回 (comment required, ↵ sends from the comment box), 跳过 (→); moves on by
  * itself; each verdict carries the content hash it was made on and a verdict made meanwhile by someone else skips
  * the item with a toast (ADR-038); the last one can be undone; scope by folder or format; held-back assets with
@@ -247,7 +247,7 @@ function QueueItem(p: {
 }) {
   const a = p.detail
   const reg = usePluginRegistry()
-  const up = useLineage(p.lib, p.item.id, { direction: 'up', types: ['source'], depth: 4 })
+  const up = useLineage(p.lib, p.item.id, { direction: 'up', types: ['source', 'reference'], depth: 4 })
   const near = nearestUpstream(up.data)
   const inv = useInvalidate(p.lib)
   const noteRef = React.useRef<HTMLTextAreaElement>(null)
@@ -261,12 +261,13 @@ function QueueItem(p: {
     while (frontier.length && out.length < 4) {
       const next: string[] = []
       for (const id of frontier) for (const e of up.data.edges) {
-        if (e.type !== 'source' || e.from !== id || seen.has(e.to)) continue
+        if ((e.type !== 'source' && e.type !== 'reference') || e.from !== id || seen.has(e.to)) continue
         seen.add(e.to)
         const n = byId.get(e.to)
         if (!n) continue
-        const rec = e.record ? up.data.records[e.record] : undefined
-        out.push({ a: n, sub: rec ? `${methodLabel(rec.method, t)} · ${rec.by}` : t('w2.rel.type.source') })
+        /* how the one made from it was made (its provenance, ADR-070), else the relation's type */
+        const prov = up.data.provenance[e.from]
+        out.push({ a: n, sub: prov ? `${methodLabel(prov.method, t)} · ${prov.by}` : t(e.type === 'reference' ? 'w2.rel.type.reference' : 'w2.rel.type.source') })
         next.push(n.id)
       }
       frontier = next
@@ -281,7 +282,7 @@ function QueueItem(p: {
   }
   const peek = (id: string, el: HTMLElement | null) => openQuickLook({ ids: [id], index: 0, origin: el })
   const checks = a?.checks ?? []
-  const rec = a?.record
+  const rec = a?.provenance
   const aiTags = a?.autoTags ?? p.item.autoTags
   return (
     <>

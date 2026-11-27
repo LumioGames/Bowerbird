@@ -8,13 +8,14 @@ import fsSync from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import {
-  BUILTIN_VIEWS, FORMAT_VERSION, ISSUE_ACTIONS, SIDECAR_SUFFIX, SCANNER_ACTOR, UNNAMED_ACTOR, actorKind, baseOf, copyName,
+  BUILTIN_VIEWS, FORMAT_VERSION, ISSUE_ACTIONS, SIDECAR_SUFFIX, SCANNER_ACTOR, UNNAMED_ACTOR, actorKind, baseOf, copyName, isMakingRelation,
   dirOf, effectiveReview, joinPath, nextFreeName, normalizeTag, serializeBmeta, splitName, versionNumberOf,
   type AssetDetail, type AssetPatch, type AssetSummary, type BatchRequest, type BatchResponse, type Bmeta, type CacheCleanResponse,
   type CacheResponse, type CopyResponse, type CreatorInfo, type ExportPlan, type ExportRequest, type FolderDefaults, type FolderMeta,
   type FolderNode, type Guid, type Issue, type ActionInfo, type IssueResolveResponse, type IssueType, type JobInfo, type JobsResponse,
   type LibraryInfo, type LibraryJson, type LibrarySettings, type Lineage, type LineageEdge, type LineageQuery, type MachineConfig,
-  type OnConflict, type PipelineStage, type PrecheckResponse, type ProductionRecord, type Query, type RecordInput,
+  type OnConflict, type PipelineStage, type PrecheckResponse, type ProductionRecord, type Query, type ProvenanceInput,
+  type Provenance, type ApplyItem, type ApplyRequest, type ApplyResponse, type ApplyChange, type UntrackResponse,
   type RegisterFields, type RegisterResponse, type Relation, type RelationInput, type RelocateCandidates, type RenderTask,
   type RetargetResponse, type ReviewStatus, type SearchRequest, type SearchResponse, type SmartView, type SummaryResponse,
   type TagEdit, type TagInfo, type ThumbVariant, type TrashInfo, type TrashItem, type VersionsResponse, type Vocabulary
@@ -23,7 +24,7 @@ import type { AssetFile, AssetInfo, FileInput, LibraryReader, ProbeResult, Regis
 import {
   CoreError, type CallContext, type CoreLogger, type CreatePipeline, type CreateQueryEngine, type EventBus, type IdentifyResult,
   type IndexDb, type IssueResolution, type LibraryHandle, type LibraryPaths, type LibraryPlugins, type LibraryService, type Pipeline,
-  type PipelineDeps, type PluginHost, type QueryEngine, type RegisterInput
+  type PipelineDeps, type PluginHost, type PluginRegisterContext, type QueryEngine, type RegisterInput
 } from '../contracts.js'
 import { IndexStore, canonicalMetaJson, rowToSummary, uniqTags, type AssetRow } from '../index/store.js'
 import { IDENTITY_FIELD, Integrity, identityOf, issueId } from '../integrity/index.js'
@@ -31,7 +32,7 @@ import { ancestors, effectiveDefaults } from '../library/defaults.js'
 import { LocalLibraryFs } from '../library/fs.js'
 import { checkName, isSafeRelPath, isUnder, mimeOf, normRel } from '../library/paths.js'
 import { isLoopbackHost } from './net.js'
-import { LibraryCore, newId, newRecordId, nowIso } from '../model/core.js'
+import { LibraryCore, newBatchId, newId, nowIso } from '../model/core.js'
 import { Scanner, type Scope } from '../scanner/index.js'
 import { planExport } from './export.js'
 import { createHandle } from './handle.js'
@@ -44,6 +45,7 @@ const STAGE_NAMES = { reference: '参考素材', production: '生产物料', run
 const REVIEW_NAMES = { pending: '待审', approved: '通过', rejected: '打回', exempt: '免审' } as const
 const BUILTIN_RELATIONS = [
   { id: 'source', name: '来源', inverseName: '产出', tracksVersion: true, plugin: null },
+  { id: 'reference', name: '参考', inverseName: '被参考', tracksVersion: false, plugin: null },
   { id: 'uses', name: '引用', inverseName: '被引用', tracksVersion: false, plugin: null },
   { id: 'belongs', name: '归属', inverseName: '包含', tracksVersion: false, plugin: null }
 ]
@@ -83,6 +85,11 @@ export interface ServiceOptions {
   /** Opens a file / reveals it in the file manager (tests replace it). */
   opener?: (target: string, reveal: boolean) => void
   now?: () => number
+  /**
+   * Run the processing pipeline (thumbnails, probes; default true). A command that opens the library on its own
+   * while no server runs turns it off: processing waits for the next server (ADR-069).
+   */
+  processing?: boolean
 }
 
 function defaultOpener(target: string, reveal: boolean): void {
@@ -153,6 +160,7 @@ export class LibraryServiceImpl implements LibraryService {
       afterFull: () => this.afterFullScan(),
       onFullBusy: busy => this.pipeline?.yieldToScan?.(busy),
       canScan: async () => !!(await this.fs.stat(''))?.isDir && (!this.core.lib || (await this.fs.exists('.bowerbird/library.json'))),
+      onIgnored: ids => this.letGoIgnored(ids),
       onScanned: ids => { this.core.lock.detached(() => { void this.pairPending(ids).catch(e => this.log.warn('slot pairing failed', { error: String(e) })) }) }
     })
     const self = this
@@ -163,7 +171,6 @@ export class LibraryServiceImpl implements LibraryService {
       get: async id => { const r = this.store.row(id); return r ? buildDetail(this.vd, r) : null },
       getByPath: async p => { const r = this.store.rowByPath(normRel(p)); return r ? buildDetail(this.vd, r) : null },
       search: async q => { const r = await this.requireQuery().search(q, { agent: false, scope: 'all' }); return { ...r, items: withOriginalPaths(this.store, r.items) } },
-      record: async id => this.store.record(id) ?? (await this.fs.readRecord(id)),
       filePath: async id => { const r = this.store.row(id); return r && !r.missing ? this.fs.absolute(r.path) : null },
       issues: async assetId => (assetId ? this.store.issuesOf(assetId) : this.store.allIssues()).map(issueView)
     }
@@ -210,18 +217,24 @@ export class LibraryServiceImpl implements LibraryService {
       changed: (paths, actor, message) => lock.detached(() => this.committer.add(paths, actor, message)),
       wantsChanges: () => !!this._plugins?.versionStore()
     }
-    try { pipeline.start() } catch (e) { this.log.error('pipeline start failed', { error: String(e) }) }
+    if (this.o.processing !== false) {
+      try { pipeline.start() } catch (e) { this.log.error('pipeline start failed', { error: String(e) }) }
+    }
     if (this.core.lib && !this.readOnly) {
       if (this.o.rebuilt) {
         this.indexBuilding = true
         await query.clearProviders().catch(() => {})
       }
       // idle(): the index is built once the retry for files still being written has run too
-      void this.scanner.scan('full').then(() => this.scanner.idle()).catch(e => this.log.error('startup scan failed', { error: String(e) })).finally(() => { this.indexBuilding = false })
+      this.startupScan = this.scanner.scan('full').then(() => this.scanner.idle()).catch(e => this.log.error('startup scan failed', { error: String(e) })).finally(() => { this.indexBuilding = false })
       this.startBackground()
     }
     return this
   }
+
+  /** Resolves when the start-up scan is done (a command without a server waits for it before it runs, ADR-069). */
+  async ready(): Promise<void> { await this.startupScan }
+  private startupScan: Promise<void> = Promise.resolve()
 
   private startBackground(): void {
     if (this.o.watch === false) return
@@ -541,152 +554,120 @@ export class LibraryServiceImpl implements LibraryService {
 
   async register(input: RegisterInput, ctx: CallContext): Promise<RegisterResponse> {
     return this.write('asset.register', ctx, { name: input.fields.name ?? input.file?.name ?? input.fields.path }, async () => {
-      return (await this.doRegister(input.fields, fileOf(input.file), ctx, {})).response
+      return this.doRegister(input.fields, fileOf(input.file), ctx, {})
     })
   }
 
-  /** Registration channel of plugins (sources, actions, creators; ADR-016). One record per run. */
-  async registerFromPlugin(req: RegisterRequest, ctx: { actor: string; pluginId: string; pluginVersion: string; recordId?: string }): Promise<{ info: AssetInfo; recordId: string | null }> {
+  /**
+   * Registration channel of plugins (sources, actions, creators; ADR-016). Every output of one run carries the run's
+   * provenance with the same batch id in its own .bmeta, and the run's inputs as source relations (ADR-070).
+   */
+  async registerFromPlugin(req: RegisterRequest, ctx: PluginRegisterContext): Promise<{ info: AssetInfo }> {
     const call: CallContext = { actor: ctx.actor || UNNAMED_ACTOR, isLocal: true }
     const { file, name, ...rest } = req
     const fields: RegisterFields = { ...rest, ...(name ? { name } : {}) }
-    if (ctx.recordId) fields.record = ctx.recordId
+    const prov = fields.provenance ?? ctx.provenance
+    if (prov || ctx.batch) fields.provenance = { ...(prov ?? { method: `${ctx.pluginId}/output` }), ...(ctx.batch && !prov?.batch ? { batch: ctx.batch } : {}) }
+    if (ctx.inputs?.length && !(fields.relations ?? []).some(r => isMakingRelation(r.type))) {
+      fields.relations = [...(fields.relations ?? []), ...ctx.inputs.map(i => ({ type: 'source', to: i.id, ...(i.role ? { role: i.role } : {}) }))]
+    }
     return this.write('asset.register', call, { plugin: ctx.pluginId, name: name ?? (file.kind === 'library' ? file.path : file.name) }, async () => {
       const src = fromFileInput(file, name)
       if (src.kind === 'library') fields.path = src.path
-      const { response } = await this.doRegister(fields, src.kind === 'library' ? null : src, call, { plugin: `${ctx.pluginId}@${ctx.pluginVersion}` })
+      const response = await this.doRegister(fields, src.kind === 'library' ? null : src, call, { plugin: `${ctx.pluginId}@${ctx.pluginVersion}` })
       if (!response.asset) throw new CoreError('conflict', '登记被跳过')
       const info = summaryOf(this.vd, response.asset.id)!
-      return { info, recordId: response.recordId }
+      return { info }
     })
   }
 
-  private async doRegister(fields: RegisterFields, file: UploadSource | null, ctx: CallContext, o: { plugin?: string }): Promise<{ response: RegisterResponse }> {
+  /** The information a registration request carries, as one wanted state (ADR-068). */
+  private itemOf(fields: RegisterFields): ApplyItem {
+    return {
+      ...(fields.stage ? { stage: fields.stage } : {}),
+      ...(fields.tags?.length ? { tags: { add: fields.tags } } : {}),
+      ...(fields.description ? { description: fields.description } : {}),
+      ...(fields.review === 'exempt' ? { review: 'exempt' as const } : {}),
+      ...(fields.provenance ? { provenance: fields.provenance } : {}),
+      ...(fields.relations?.length ? { relations: { add: fields.relations } } : {}),
+      ...(fields.views ? { views: fields.views } : {})
+    }
+  }
+
+  private async doRegister(fields: RegisterFields, file: UploadSource | null, ctx: CallContext, o: { plugin?: string }): Promise<RegisterResponse> {
     const by = this.actor(ctx)
     const knownTags = this.store.knownTags()
-    const reqTags = uniqTags(fields.tags)
-    let p: string
-    let existingRow: AssetRow | undefined
+    const item = this.itemOf(fields)
+    // a file already in the library: the same as saying what it should have (ADR-068) — again and again is harmless
     if (!file || fields.path || file.kind === 'library') {
-      if (file?.kind === 'library' && !fields.path) fields = { ...fields, path: file.path }
-      if (!fields.path) throw new CoreError('validation_failed', '需要上传文件，或给出资产库内的路径')
-      p = normRel(fields.path)
-      if (!p || isUnder(p, '.bowerbird')) throw new CoreError('validation_failed', `路径不合法：${fields.path}`)
-      const st = await this.fs.stat(p)
-      if (!st) throw new CoreError('not_found', `资产库里没有这个文件：${p}`, { path: p })
-      if (this.fs.ignored(p, st.isDir)) throw new CoreError('validation_failed', `这个文件会被忽略规则跳过：${p}`, { path: p })
-      // registered by the scanner a moment ago (or earlier): apply the fields to that asset
-      const sc = await this.fs.readSidecar(p)
-      if (sc && !sc.ok) throw new CoreError('conflict', `这个文件的记录读不出来：${p}${SIDECAR_SUFFIX}`, { path: p })
-      existingRow = sc?.ok ? this.store.row(sc.meta.id) : this.store.rowByPath(p)
-      if (sc?.ok && !existingRow && !this.store.rowByPath(p)) {
-        // a file that arrived with its own sidecar and was not scanned yet: take it as it is (never a new GUID)
-        await this.core.indexMeta(p, sc.meta, { knownHash: false })
-        existingRow = this.store.row(sc.meta.id)
-        await this.core.integrity.refresh([sc.meta.id])
-        this.core.hooks.enqueue(sc.meta.id, 'all', { reason: 'registered' })
-        this.emit('asset.created', { id: sc.meta.id, path: p, by })
-      }
-      if (sc?.ok && existingRow && existingRow.path !== p) throw new CoreError('conflict', '同一个资产出现在两个位置', { path: p, id: sc.meta.id, existing: existingRow.path })
-      if (existingRow && existingRow.path === p) {
-        const recordId = await this.resolveRecord(fields.record, ctx, o.plugin)
-        await this.applyRegisterFields(existingRow, fields, recordId, by)
-        return { response: { asset: await this.detail(existingRow.id), skipped: false, recordId, newTags: this.newTags(reqTags, knownTags) } }
-      }
-    } else {
-      this.prepareRelations(fields.relations ?? [], null, null) // validate before writing anything
-      const folder = normRel(fields.folder ?? '')
-      const nameRel = normRel(fields.name ?? file.name)
-      if (!nameRel) throw new CoreError('validation_failed', '缺少文件名')
-      checkName(baseOf(nameRel))
-      p = joinPath(folder, nameRel)
-      if (isUnder(p, '.bowerbird')) throw new CoreError('validation_failed', `路径不合法：${p}`)
-      if (this.fs.ignored(p, false)) throw new CoreError('validation_failed', `这个文件名会被忽略规则跳过：${baseOf(p)}`, { path: p })
-      const occupied = this.store.rowByPath(p) ?? undefined
-      if (occupied || (await this.fs.exists(p)) || (await this.fs.exists(p + SIDECAR_SUFFIX))) {
-        const mode: OnConflict | undefined = fields.onConflict
-        if (!mode) throw new CoreError('conflict', `${dirOf(p) || '根目录'} 里已经有 ${baseOf(p)}`, { path: p, existing: occupied?.id ?? null })
-        if (mode === 'skip') return { response: { asset: null, skipped: true, recordId: null, newTags: [] } }
-        if (mode === 'replace' && !occupied) {
-          // ADR-047: an unregistered file is never overwritten
-          throw new CoreError('conflict', `${baseOf(p)} 是一个还没登记的文件，不会覆盖它`, { path: p, existing: null })
-        }
-        if (mode === 'replace' && occupied) {
-          await this.doReplaceContent(occupied, file, undefined, by)
-          const recordId = await this.resolveRecord(fields.record, ctx, o.plugin)
-          await this.applyRegisterFields(this.row404(occupied.id), fields, recordId, by)
-          return { response: { asset: await this.detail(occupied.id), skipped: false, recordId, newTags: this.newTags(reqTags, knownTags) } }
-        }
-        if (mode === 'keep-both') {
-          const dir = dirOf(p)
-          const free = nextFreeName(baseOf(p), c => !!this.store.rowByPath(joinPath(dir, c)) || this.existsSync(joinPath(dir, c)) || this.existsSync(joinPath(dir, c) + SIDECAR_SUFFIX))
-          p = joinPath(dir, free)
-        }
-      }
-      if (file.kind === 'bytes') await this.fs.writeFile(p, file.data)
-      else if (file.kind === 'path') await this.fs.copyIn(file.abs, p)
+      const p = fields.path ?? (file?.kind === 'library' ? file.path : undefined)
+      if (!p) throw new CoreError('validation_failed', '需要上传文件，或给出资产库内的路径')
+      const res = await this.applyOne({ ...item, path: p }, ctx, { dryRun: false, plugin: o.plugin })
+      return { asset: await this.detail(res.id!), skipped: false, newTags: this.newTags(res.addedTags, knownTags) }
     }
+
+    this.prepareRelations(fields.relations ?? [], null) // validate before writing anything
+    const folder = normRel(fields.folder ?? '')
+    const nameRel = normRel(fields.name ?? file.name)
+    if (!nameRel) throw new CoreError('validation_failed', '缺少文件名')
+    checkName(baseOf(nameRel))
+    let p = joinPath(folder, nameRel)
+    if (isUnder(p, '.bowerbird')) throw new CoreError('validation_failed', `路径不合法：${p}`)
+    if (this.fs.ignored(p, false)) throw new CoreError('validation_failed', `这个文件名会被忽略规则跳过：${baseOf(p)}`, { path: p })
+    const occupied = this.store.rowByPath(p) ?? undefined
+    if (occupied || (await this.fs.exists(p)) || (await this.fs.exists(p + SIDECAR_SUFFIX))) {
+      const mode: OnConflict | undefined = fields.onConflict
+      if (!mode) throw new CoreError('conflict', `${dirOf(p) || '根目录'} 里已经有 ${baseOf(p)}`, { path: p, existing: occupied?.id ?? null })
+      if (mode === 'skip') return { asset: null, skipped: true, newTags: [] }
+      if (mode === 'replace' && !occupied) {
+        // ADR-047: an unregistered file is never overwritten
+        throw new CoreError('conflict', `${baseOf(p)} 是一个还没登记的文件，不会覆盖它`, { path: p, existing: null })
+      }
+      if (mode === 'replace' && occupied) {
+        await this.doReplaceContent(occupied, file, undefined, by)
+        const res = await this.applyOne({ ...item, id: occupied.id }, ctx, { dryRun: false, plugin: o.plugin })
+        return { asset: await this.detail(occupied.id), skipped: false, newTags: this.newTags(res.addedTags, knownTags) }
+      }
+      if (mode === 'keep-both') {
+        const dir = dirOf(p)
+        const free = nextFreeName(baseOf(p), c => !!this.store.rowByPath(joinPath(dir, c)) || this.existsSync(joinPath(dir, c)) || this.existsSync(joinPath(dir, c) + SIDECAR_SUFFIX))
+        p = joinPath(dir, free)
+      }
+    }
+    if (file.kind === 'bytes') await this.fs.writeFile(p, file.data)
+    else if (file.kind === 'path') await this.fs.copyIn(file.abs, p)
 
     const st = await this.fs.contentStat(p)
     if (!st) throw new CoreError('internal', `写入失败：${p}`)
     const hash = await this.fs.hash(p)
-    const recordId = await this.resolveRecord(fields.record, ctx, o.plugin)
-    const relations = this.prepareRelations(fields.relations ?? [], recordId, null)
-    const meta = await this.core.claim(p, { hash, size: st.size, isDir: st.isDir }, {
-      by, stage: fields.stage, tags: reqTags, description: fields.description, review: fields.review, relations,
-      views: fields.views, origin: recordId ?? undefined
-    })
+    // written once, with what the request says (nobody ever sees it without); an upload that says nothing about the
+    // file is only seen, like a file copied in (ADR-067)
+    const fresh = await this.core.newMeta(p, { hash, size: st.size, isDir: st.isDir }, { by })
+    const { next: meta, changes, addedTags } = this.wanted(fresh, item, by, fresh.id, o.plugin)
+    if (changes.length) await this.core.writeMeta(p, meta)
+    else await this.core.indexOnly(p, meta)
     this.store.setFile(p, st.size, st.mtimeMs, hash)
-    await this.core.integrity.refresh([meta.id])
+    if (changes.some(c => c.field === 'relations')) for (const r of meta.relations ?? []) this.relationPipeline(meta.id, r.type)
+    await this.core.integrity.refresh([meta.id, ...(meta.relations ?? []).map(r => r.to)])
     this.core.hooks.enqueue(meta.id, 'all', { priority: 1, reason: 'registered' })
     this.core.hooks.changed([p], by, 'register')
     this.emit('asset.created', { id: meta.id, path: p, by })
-    if (relations.length) for (const r of relations) this.emit('relation.updated', { from: meta.id, type: r.type, to: r.to, op: 'added' })
+    for (const r of meta.relations ?? []) this.emit('relation.updated', { from: meta.id, type: r.type, to: r.to, op: 'added' })
     await this.pairPending(new Set([meta.id]))
-    return { response: { asset: await this.detail(meta.id), skipped: false, recordId, newTags: this.newTags(reqTags, knownTags) } }
+    return { asset: await this.detail(meta.id), skipped: false, newTags: this.newTags(addedTags, knownTags) }
   }
 
   private existsSync(rel: string): boolean {
     try { return fsSync.existsSync(this.fs.absolute(rel)) } catch { return false }
   }
 
-  /** Apply registration fields to an asset that already exists (path registration of a scanned file, replace). */
-  private async applyRegisterFields(rowIn: AssetRow, fields: RegisterFields, recordId: string | null, by: string): Promise<void> {
-    const { row, meta } = await this.freshRow(rowIn)
-    const next: Bmeta = { ...meta }
-    if (fields.stage) next.stage = fields.stage
-    if (fields.tags?.length) next.tags = uniqTags([...(meta.tags ?? []), ...fields.tags])
-    if (fields.description) next.description = fields.description
-    if (fields.views) next.views = fields.views
-    if (fields.review === 'exempt') next.review = { status: 'exempt', by, at: nowIso() }
-    if (recordId && !next.origin) next.origin = recordId
-    const rels = this.prepareRelations(fields.relations ?? [], recordId, row.id)
-    if (rels.length) next.relations = dedupeRelations([...(meta.relations ?? []), ...rels])
-    await this.save(row, next, by)
-    await this.core.integrity.refresh([row.id])
-    this.core.hooks.enqueue(row.id, ['index'], { reason: 'fields' })
-    this.emit('asset.updated', { id: row.id, fields: ['tags', 'description', 'stage', 'relations'], by })
-  }
-
-  private async resolveRecord(record: RegisterFields['record'], ctx: CallContext, plugin?: string): Promise<string | null> {
-    if (!record) return null
-    if (typeof record === 'string') {
-      if (!this.store.record(record)) {
-        const r = await this.fs.readRecord(record)
-        if (!r) throw new CoreError('validation_failed', `生产记录不存在：${record}`, { record })
-        this.store.upsertRecord(r)
-      }
-      return record
-    }
-    return (await this.doCreateRecord(record, ctx, plugin)).id
-  }
-
   /**
-   * Validate relation inputs and fill toHash / record; add source relations to the record's inputs (ADR-016).
-   * `trashedOk`: a target in the trash is accepted (the relation is broken until it is restored), so that undoing
-   * 「删除这条关系」on a broken link can put it back; a target that is neither indexed nor in the trash never is.
+   * Validate relation inputs and fill toHash: a `source` relation remembers the counterpart's content to notice when
+   * it changes; a `reference` one keeps it only for the record (ADR-073). `trashedOk`: a target in the trash is
+   * accepted (the relation is broken until it is restored), so that undoing「删除这条关系」on a broken link can put it
+   * back; a target that is neither indexed nor in the trash never is.
    */
-  private prepareRelations(inputs: RelationInput[], recordId: string | null, self: Guid | null, trashedOk = false): Relation[] {
+  private prepareRelations(inputs: RelationInput[], self: Guid | null, trashedOk = false): Relation[] {
     const out: Relation[] = []
     const types = new Set([...BUILTIN_RELATIONS.map(r => r.id), ...(this._plugins?.relationTypes() ?? []).map(r => r.id)])
     for (const r of inputs) {
@@ -697,23 +678,14 @@ export class LibraryServiceImpl implements LibraryService {
       const trashed = !target && trashedOk ? this.store.trashByAsset(r.to) : undefined
       if (!target && !trashed) throw new CoreError('validation_failed', `关系的对方不存在：${r.to}`, { to: r.to })
       const toHash = target ? target.hash : trashedHash(trashed)
-      if (r.record && !this.store.record(r.record)) throw new CoreError('validation_failed', `生产记录不存在：${r.record}`, { record: r.record })
       if (self && r.type === 'source') this.assertNoCycle(self, r.to)
-      const tracks = this.core.tracksVersion(r.type)
+      const keepsHash = this.core.tracksVersion(r.type) || isMakingRelation(r.type)
       out.push({
         type: r.type, to: r.to,
-        ...(tracks && toHash ? { toHash } : {}),
-        ...(r.type === 'source' && (r.record ?? recordId) ? { record: r.record ?? recordId! } : {}),
+        ...(keepsHash && toHash ? { toHash } : {}),
+        ...(r.role && isMakingRelation(r.type) ? { role: r.role } : {}),
         ...(r.slot ? { slot: r.slot } : {}), ...(r.note ? { note: r.note } : {})
       })
-    }
-    if (recordId) {
-      const rec = this.store.record(recordId)
-      for (const inp of rec?.inputs ?? []) {
-        if (inp.id === self || out.some(r => r.type === 'source' && r.to === inp.id)) continue
-        if (!this.store.row(inp.id)) continue
-        out.push({ type: 'source', to: inp.id, toHash: inp.hash, record: recordId })
-      }
     }
     return dedupeRelations(out)
   }
@@ -733,67 +705,309 @@ export class LibraryServiceImpl implements LibraryService {
     return fresh.map(tag => ({ tag, similar: similarTags(tag, counts, aliases) }))
   }
 
+  /* ───────────── wanted state (ADR-068) ───────────── */
+
+  async apply(req: ApplyRequest, ctx: CallContext): Promise<ApplyResponse> {
+    const dryRun = !!req.dryRun
+    const known = this.store.knownTags()
+    const results: ApplyResponse['results'] = []
+    const added = new Set<string>()
+    const run = async () => {
+      for (const [index, item] of req.items.entries()) {
+        try {
+          const r = await this.applyOne(item, ctx, { dryRun })
+          for (const t of r.addedTags) added.add(t)
+          results.push({ index, id: r.id, path: r.path, changed: r.changes.length > 0, changes: r.changes })
+        } catch (e) {
+          const err = e instanceof CoreError ? { code: e.code, message: e.message, ...(e.details ? { details: e.details } : {}) } : { code: 'internal', message: String((e as Error)?.message ?? e) }
+          results.push({ index, id: item.id ?? null, path: item.path ?? null, changed: false, changes: [], error: err })
+        }
+      }
+    }
+    if (dryRun) await run()
+    else await this.write('asset.apply', ctx, { items: req.items.length }, run)
+    return { results, dryRun, newTags: dryRun ? [] : this.newTags([...added], known) }
+  }
+
+  /**
+   * Compare one wanted state with the asset and write the difference (inside the write lock unless `dryRun`).
+   * A `path` that the index does not know yet is taken in first: a file with its own .bmeta as it is, a bare file
+   * as a seen asset (it gets its .bmeta only when there is something to write).
+   */
+  private async applyOne(item: ApplyItem, ctx: CallContext, o: { dryRun: boolean; plugin?: string; quiet?: boolean }): Promise<{ id: Guid | null; path: string | null; changes: ApplyChange[]; addedTags: string[] }> {
+    const by = this.actor(ctx)
+    let row = item.id ? this.row404(item.id) : await this.rowAtPath(item.path, o.dryRun)
+    if (!row) {
+      // dry run on a file the index has not taken in yet: compare with what a fresh asset would be
+      const p = normRel(item.path ?? '')
+      const blank = await this.blankMeta(p, by)
+      const { changes, addedTags } = this.wanted(blank, item, by, null, o.plugin)
+      return { id: null, path: p, changes, addedTags }
+    }
+    if (item.id && item.path && normRel(item.path) !== row.path) throw new CoreError('validation_failed', `id 与路径指的不是同一个资产：${item.path}`, { id: item.id, path: item.path })
+    if (row.missing) throw new CoreError('conflict', `${row.name} 的文件不见了，先在完整性里处理`, { id: row.id })
+    const cur = o.dryRun ? { row, meta: this.store.meta(row) } : await this.freshRow(row)
+    row = cur.row
+    const { next, changes, addedTags } = this.wanted(cur.meta, item, by, row.id, o.plugin)
+    if (!changes.length || o.dryRun) return { id: row.id, path: row.path, changes, addedTags }
+    await this.save(row, next, by)
+    const fields = [...new Set(changes.map(c => c.field.split('.')[0]!))]
+    if (fields.some(f => f === 'tags' || f === 'description' || f === 'stage' || f === 'provenance')) this.core.hooks.enqueue(row.id, ['index'], { reason: 'apply' })
+    if (fields.includes('relations')) {
+      const before = new Set((cur.meta.relations ?? []).map(relKey))
+      const after = new Set((next.relations ?? []).map(relKey))
+      for (const r of next.relations ?? []) if (!before.has(relKey(r))) { this.relationPipeline(row.id, r.type); if (!o.quiet) this.emit('relation.updated', { from: row.id, type: r.type, to: r.to, op: 'added' }) }
+      for (const r of cur.meta.relations ?? []) if (!after.has(relKey(r))) { this.relationPipeline(row.id, r.type); if (!o.quiet) this.emit('relation.updated', { from: row.id, type: r.type, to: r.to, op: 'removed' }) }
+      await this.core.integrity.refresh([row.id, ...(next.relations ?? []).map(r => r.to), ...(cur.meta.relations ?? []).map(r => r.to)])
+    }
+    this.core.hooks.changed([row.path], by, 'metadata')
+    if (!o.quiet) this.emit('asset.updated', { id: row.id, fields, by })
+    return { id: row.id, path: row.path, changes, addedTags }
+  }
+
+  /** The asset at a library path, taking a file the index has not seen yet in (ADR-067); null only on a dry run. */
+  private async rowAtPath(pathIn: string | undefined, dryRun: boolean): Promise<AssetRow | null> {
+    if (!pathIn) throw new CoreError('validation_failed', '给出资产的 id 或资产库内的路径')
+    const p = normRel(pathIn)
+    if (!p || isUnder(p, '.bowerbird')) throw new CoreError('validation_failed', `路径不合法：${pathIn}`)
+    const known = this.store.rowByPath(p)
+    const st = await this.fs.stat(p)
+    if (!st) {
+      if (known?.missing) return known
+      throw new CoreError('not_found', `资产库里没有这个文件：${p}`, { path: p })
+    }
+    if (this.fs.ignored(p, st.isDir)) throw new CoreError('validation_failed', `这个文件会被忽略规则跳过：${p}`, { path: p })
+    // a file inside a bundle is part of that one asset; a plain folder is not an asset (bundles are made explicitly)
+    for (const a of ancestors(dirOf(p))) {
+      if (a && (this.store.rowByPath(a)?.bundle || (await this.fs.exists(a + SIDECAR_SUFFIX)))) throw new CoreError('validation_failed', `${p} 在包式资产 ${a} 里面，只能对整个包写信息`, { path: p, bundle: a })
+    }
+    if (st.isDir && !known?.bundle && !(await this.fs.exists(p + SIDECAR_SUFFIX))) {
+      throw new CoreError('validation_failed', `${p} 是一个文件夹，不是资产；要把它当成一个资产，先把它建成包式资产`, { path: p })
+    }
+    const sc = await this.fs.readSidecar(p)
+    if (sc && !sc.ok) throw new CoreError('conflict', `这个文件的记录读不出来：${p}${SIDECAR_SUFFIX}`, { path: p })
+    if (sc?.ok) {
+      const byId = this.store.row(sc.meta.id)
+      if (byId && byId.path !== p) throw new CoreError('conflict', '同一个资产出现在两个位置', { path: p, id: sc.meta.id, existing: byId.path })
+      if (byId) return byId
+      if (dryRun) return null
+      // a file that arrived with its own sidecar and was not scanned yet: take it as it is (never a new GUID)
+      if (known && known.id !== sc.meta.id && !known.sidecar) { this.store.deleteAsset(known.id); this.core.hooks.forget(known.id) }
+      await this.core.indexMeta(p, sc.meta, { knownHash: false })
+      await this.core.integrity.refresh([sc.meta.id])
+      this.core.hooks.enqueue(sc.meta.id, 'all', { reason: 'registered' })
+      this.emit('asset.created', { id: sc.meta.id, path: p, by: SCANNER_ACTOR })
+      return this.row404(sc.meta.id)
+    }
+    if (known) return known
+    if (dryRun) return null
+    // a bare file the scanner has not reached yet: the library sees it now
+    const hash = await this.fs.hash(p)
+    const cst = await this.fs.contentStat(p)
+    const fileTime = new Date(cst?.mtimeMs ?? this.now()).toISOString()
+    const meta = await this.core.claim(p, { hash, size: cst?.size ?? st.size, isDir: st.isDir }, { by: SCANNER_ACTOR, at: fileTime, versionAt: fileTime, indexOnly: true })
+    if (cst) this.store.setFile(p, cst.size, cst.mtimeMs, hash)
+    await this.core.integrity.refresh([meta.id])
+    this.core.hooks.enqueue(meta.id, 'all', { priority: 1, reason: 'registered' })
+    this.emit('asset.created', { id: meta.id, path: p, by: SCANNER_ACTOR })
+    return this.row404(meta.id)
+  }
+
+  /** What a fresh asset at `p` would be (dry run before the file is taken in). */
+  private async blankMeta(p: string, by: string): Promise<Bmeta> {
+    const st = await this.fs.stat(p)
+    if (!st) throw new CoreError('not_found', `资产库里没有这个文件：${p}`, { path: p })
+    const defaults = await effectiveDefaults(this.fs, dirOf(p))
+    const tags = uniqTags(defaults.tags)
+    return {
+      bb: FORMAT_VERSION, id: '00000000-0000-7000-8000-000000000000', hash: 'sha256:', stage: defaults.stage ?? this.core.defaultStage(),
+      ...(tags.length ? { tags } : {}), ...(defaults.review === 'exempt' ? { review: { status: 'exempt', by, at: nowIso() } } : {}),
+      created: { at: nowIso(), by }
+    }
+  }
+
+  /**
+   * The next metadata for a wanted state, and what differs (ADR-068). Nothing here writes. Lists (tags, relations)
+   * are said item by item — has / has not — so two callers never undo each other.
+   */
+  private wanted(meta: Bmeta, item: ApplyItem, by: string, self: Guid | null, plugin?: string): { next: Bmeta; changes: ApplyChange[]; addedTags: string[] } {
+    const next: Bmeta = { ...meta }
+    const changes: ApplyChange[] = []
+    const change = (field: string, before: unknown, after: unknown) => changes.push({ field, before: before ?? null, after: after ?? null })
+    let addedTags: string[] = []
+    if (item.stage && item.stage !== meta.stage) { change('stage', meta.stage, item.stage); next.stage = item.stage }
+    if (item.tags) {
+      const before = uniqTags(meta.tags)
+      const remove = new Set(uniqTags(item.tags.remove))
+      const after = uniqTags([...before.filter(t => !remove.has(t)), ...uniqTags(item.tags.add).filter(t => !remove.has(t))])
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        addedTags = after.filter(t => !before.includes(t))
+        change('tags', before, after)
+        if (after.length) next.tags = after
+        else delete next.tags
+      }
+    }
+    if (item.description !== undefined) {
+      const want = item.description ?? ''
+      if (want !== (meta.description ?? '')) {
+        change('description', meta.description, want || null)
+        if (want) next.description = want
+        else delete next.description
+      }
+    }
+    if (item.review === 'exempt' && meta.review?.status !== 'exempt') {
+      change('review', meta.review?.status ?? 'pending', 'exempt')
+      next.review = { status: 'exempt', by, at: nowIso() }
+    } else if (item.review === 'pending' && meta.review?.status === 'exempt') {
+      change('review', 'exempt', 'pending')
+      delete next.review
+    }
+    if (item.provenance !== undefined) {
+      const before = meta.provenance
+      if (item.provenance === null) {
+        if (before) { change('provenance', before, null); delete next.provenance }
+      } else {
+        const want = provenanceOf(item.provenance, before, by, plugin)
+        if (!sameProvenance(before, want)) { change('provenance', before, want); next.provenance = want }
+      }
+    }
+    if (item.relations) {
+      const cur = meta.relations ?? []
+      const prepared = this.prepareRelations(item.relations.add ?? [], self)
+      let list = cur.map(r => ({ ...r }))
+      for (const r of prepared) {
+        const i = list.findIndex(x => relKey(x) === relKey(r))
+        if (i < 0) { list.push(r); continue }
+        const x = list[i]!
+        // an existing relation keeps the version it points at (making it again never acknowledges an update)
+        const merged: Relation = { ...x, ...(r.to !== x.to ? { to: r.to, ...(r.toHash ? { toHash: r.toHash } : {}) } : {}), ...(r.role ? { role: r.role } : {}), ...(r.note ? { note: r.note } : {}) }
+        list[i] = merged
+      }
+      for (const rm of item.relations.remove ?? []) {
+        list = list.filter(x => !(x.type === rm.type && x.to === rm.to && (rm.slot === undefined || (x.slot ?? '') === rm.slot)))
+      }
+      if (JSON.stringify(cur) !== JSON.stringify(list)) {
+        change('relations', cur, list)
+        if (list.length) next.relations = list
+        else delete next.relations
+      }
+    }
+    if (item.views !== undefined) {
+      const want = item.views ?? undefined
+      if (JSON.stringify(meta.views ?? null) !== JSON.stringify(want ?? null)) {
+        change('views', meta.views, want)
+        if (want) next.views = want
+        else delete next.views
+      }
+    }
+    if (item.fields) {
+      const reserved = Object.keys(item.fields).filter(ns => ns === 'bowerbird' || ns.startsWith('bowerbird.'))
+      if (reserved.length) throw new CoreError('validation_failed', `字段命名空间 ${reserved.join('、')} 由内核使用，不能直接改`, { namespaces: reserved })
+      const f = { ...(meta.fields ?? {}) }
+      for (const [ns, v] of Object.entries(item.fields)) {
+        const want = v && Object.keys(v).length ? v : undefined
+        if (JSON.stringify(f[ns] ?? null) === JSON.stringify(want ?? null)) continue
+        change(`fields.${ns}`, f[ns], want)
+        if (want) f[ns] = want
+        else delete f[ns]
+      }
+      if (Object.keys(f).length) next.fields = f
+      else delete next.fields
+    }
+    if (item.auxiliary !== undefined && item.auxiliary !== !!meta.auxiliary) {
+      change('auxiliary', !!meta.auxiliary, item.auxiliary)
+      if (item.auxiliary) next.auxiliary = true
+      else delete next.auxiliary
+    }
+    return { next, changes, addedTags }
+  }
+
   /* ───────────── asset edits ───────────── */
 
   async patch(id: Guid, patch: AssetPatch, ctx: CallContext): Promise<{ asset: AssetDetail; newTags: RegisterResponse['newTags'] }> {
     return this.write('asset.patch', ctx, { id, fields: Object.keys(patch) }, async () => {
       const known = this.store.knownTags()
-      const { fields, added } = await this.doPatch(id, patch, ctx)
-      void fields
+      const { added } = await this.doPatch(id, patch, ctx)
       return { asset: await this.detail(id), newTags: this.newTags(added, known) }
     })
   }
 
+  /** A patch is a wanted state too; `tags.set` is said as has / has not against the tags now. */
   private async doPatch(id: Guid, patch: AssetPatch, ctx: CallContext): Promise<{ fields: string[]; added: string[] }> {
-    const by = this.actor(ctx)
-    const { row, meta } = await this.current(id)
-    const next: Bmeta = { ...meta }
-    const fields: string[] = []
-    let added: string[] = []
-    if (patch.tags) {
-      const before = uniqTags(meta.tags)
-      const after = applyTagEdit(before, patch.tags)
-      if (JSON.stringify(before) !== JSON.stringify(after)) {
-        added = after.filter(t => !before.includes(t))
-        if (after.length) next.tags = after
-        else delete next.tags
-        fields.push('tags')
-      }
+    const row = this.row404(id)
+    let tags: ApplyItem['tags']
+    if (patch.tags?.set) {
+      const now = uniqTags(this.store.meta(row).tags)
+      const set = uniqTags(patch.tags.set)
+      tags = { add: set, remove: now.filter(t => !set.includes(t)) }
+    } else if (patch.tags) tags = { ...(patch.tags.add ? { add: patch.tags.add } : {}), ...(patch.tags.remove ? { remove: patch.tags.remove } : {}) }
+    const item: ApplyItem = {
+      id,
+      ...(tags ? { tags } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.stage ? { stage: patch.stage } : {}),
+      ...(patch.fields ? { fields: patch.fields } : {}),
+      ...(patch.auxiliary !== undefined ? { auxiliary: patch.auxiliary } : {}),
+      ...(patch.views !== undefined ? { views: patch.views } : {}),
+      ...(patch.provenance !== undefined ? { provenance: patch.provenance } : {})
     }
-    if (patch.description !== undefined && patch.description !== (meta.description ?? '')) {
-      if (patch.description) next.description = patch.description
-      else delete next.description
-      fields.push('description')
+    const r = await this.applyOne(item, ctx, { dryRun: false })
+    return { fields: [...new Set(r.changes.map(c => c.field.split('.')[0]!))], added: r.addedTags }
+  }
+
+  /* ───────────── untrack (ADR-067) ───────────── */
+
+  async untrack(id: Guid, ctx: CallContext): Promise<UntrackResponse> {
+    return this.write('asset.untrack', ctx, { id }, async () => {
+      const row = this.row404(id)
+      const referrers = this.store.referrers(id)
+      const trashId = await this.doUntrack(row, this.actor(ctx))
+      return { trashId, referrers }
+    })
+  }
+
+  /** The library lets go of an asset: its .bmeta to the trash (restorable), the file stays; the index forgets it. */
+  private async doUntrack(row: AssetRow, by: string): Promise<string | null> {
+    const trashId = await this.trashSidecarOf(row, by)
+    const referrers = this.store.referrers(row.id)
+    this.store.deleteAsset(row.id)
+    this.core.integrity.removeAsset(row.id)
+    this.core.hooks.forget(row.id)
+    this.core.hooks.removeDocs([row.id])
+    this.core.hooks.changed([row.path], by, 'untrack')
+    await this.core.integrity.refresh(referrers)
+    this.emit('asset.removed', { id: row.id, reason: 'untracked' })
+    // the file is still there: the next scan sees it again, as a file nobody said anything about
+    this.scanAfterWrite({ folder: dirOf(row.path), recursive: false })
+    return trashId
+  }
+
+  /**
+   * Move an asset's .bmeta to the trash (restorable). When the index knows a .bmeta the disk no longer has, the
+   * index copy is written out first, so the information still ends up in the trash instead of nowhere.
+   */
+  private async trashSidecarOf(row: AssetRow, by: string): Promise<string | null> {
+    if (!row.sidecar) return null
+    if (!(await this.fs.exists(row.path + SIDECAR_SUFFIX))) await this.fs.writeSidecar(row.path, this.store.meta(row))
+    return this.trashLoose(row.path + SIDECAR_SUFFIX, by, { kind: 'sidecar', assetId: row.id })
+  }
+
+  /** Scanner hook: assets with a .bmeta now matched by an ignore rule (inside the scan's lock). */
+  private async letGoIgnored(ids: Guid[]): Promise<void> {
+    for (const id of ids) {
+      const row = this.store.row(id)
+      if (!row) continue
+      let trashId: string | null = null
+      try { trashId = await this.trashSidecarOf(row, SCANNER_ACTOR) } catch (e) { this.log.warn('could not move the .bmeta of an ignored file to the trash', { path: row.path, error: String(e) }); continue }
+      const referrers = this.store.referrers(id)
+      this.store.deleteAsset(id)
+      this.core.integrity.removeAsset(id)
+      this.core.hooks.forget(id)
+      this.core.hooks.removeDocs([id])
+      await this.core.integrity.refresh(referrers)
+      this.log.info('asset now ignored: its .bmeta went to the trash, the file stays', { id, path: row.path, trashId })
+      this.emit('asset.removed', { id, reason: 'untracked' })
     }
-    if (patch.stage && patch.stage !== meta.stage) { next.stage = patch.stage; fields.push('stage') }
-    if (patch.fields) {
-      const reserved = Object.keys(patch.fields).filter(ns => ns === 'bowerbird' || ns.startsWith('bowerbird.'))
-      if (reserved.length) throw new CoreError('validation_failed', `字段命名空间 ${reserved.join('、')} 由内核使用，不能直接改`, { namespaces: reserved })
-      const f = { ...(meta.fields ?? {}) }
-      for (const [ns, v] of Object.entries(patch.fields)) {
-        if (!v || !Object.keys(v).length) delete f[ns]
-        else f[ns] = v
-      }
-      if (Object.keys(f).length) next.fields = f
-      else delete next.fields
-      fields.push('fields')
-    }
-    if (patch.auxiliary !== undefined && patch.auxiliary !== !!meta.auxiliary) {
-      if (patch.auxiliary) next.auxiliary = true
-      else delete next.auxiliary
-      fields.push('auxiliary')
-    }
-    if (patch.views !== undefined) {
-      if (patch.views) next.views = patch.views
-      else delete next.views
-      fields.push('views')
-    }
-    if (!fields.length) return { fields, added }
-    await this.save(row, next, by)
-    if (fields.some(f => f === 'tags' || f === 'description' || f === 'stage')) this.core.hooks.enqueue(id, ['index'], { reason: 'patch' })
-    this.core.hooks.changed([row.path], by, 'metadata')
-    this.emit('asset.updated', { id, fields, by })
-    return { fields, added }
   }
 
   /* ───────────── trash ───────────── */
@@ -823,7 +1037,9 @@ export class LibraryServiceImpl implements LibraryService {
     else await this.fs.writeAbsAtomic(this.fs.trashAbs(trashId, name + SIDECAR_SUFFIX), serializeBmeta(meta))
     const info: TrashInfo = {
       bb: FORMAT_VERSION, id: trashId, assetId: row.id, name, originalPath, deletedAt: new Date(this.now()).toISOString(), deletedBy: by,
-      ...(row.bundle ? { bundle: true } : {}), ...(o.batch ? { batch: o.batch } : {}), ...(fileThere ? {} : { recordOnly: true })
+      ...(row.bundle ? { bundle: true } : {}), ...(o.batch ? { batch: o.batch } : {}), ...(fileThere ? {} : { recordOnly: true }),
+      // a file the library only saw: restoring it brings the file back, never a .bmeta it did not have (ADR-067)
+      ...(row.sidecar ? {} : { seen: true })
     }
     await this.fs.writeTrashInfo(info)
     this.store.insertTrash(info, meta, row.size, row.format)
@@ -907,12 +1123,15 @@ export class LibraryServiceImpl implements LibraryService {
       renamedTo = suggested
     }
     const hasFile = !info.recordOnly && (await this.fs.trashEntryExists(trashId, info.name))
+    const seenOnly = !!(info as { seen?: boolean }).seen && hasFile
     if (hasFile) await this.fs.moveOutOfTrash(trashId, info.name, target)
-    if (await this.fs.trashEntryExists(trashId, info.name + SIDECAR_SUFFIX)) await this.fs.moveOutOfTrash(trashId, info.name + SIDECAR_SUFFIX, target + SIDECAR_SUFFIX)
+    if (seenOnly) { /* no .bmeta: the file comes back as it was, only seen */ }
+    else if (await this.fs.trashEntryExists(trashId, info.name + SIDECAR_SUFFIX)) await this.fs.moveOutOfTrash(trashId, info.name + SIDECAR_SUFFIX, target + SIDECAR_SUFFIX)
     else await this.fs.writeSidecar(target, meta)
     await this.fs.purgeTrashEntry(trashId)
     this.store.deleteTrash(trashId)
-    await this.core.indexMeta(target, meta, { missing: !hasFile })
+    if (seenOnly) await this.core.indexOnly(target, meta)
+    else await this.core.indexMeta(target, meta, { missing: !hasFile })
     await this.core.integrity.refresh([meta.id])
     if (hasFile) this.core.hooks.enqueue(meta.id, 'all', { reason: 'restored' })
     this.core.hooks.changed([target], by, 'restore')
@@ -936,6 +1155,13 @@ export class LibraryServiceImpl implements LibraryService {
   private async restoreLoose(trashId: string, info: TrashInfo, rename: boolean | undefined): Promise<{ asset: AssetSummary; renamedTo: string | null }> {
     let target = info.originalPath
     const dir = dirOf(target)
+    const kind = (info as { kind?: string }).kind
+    if (kind === 'sidecar' && target.endsWith(SIDECAR_SUFFIX)) {
+      // the .bmeta of a file an ignore rule matches would only be let go again by the next scan (ADR-067)
+      const assetPath = target.slice(0, -SIDECAR_SUFFIX.length)
+      const st = await this.fs.stat(assetPath)
+      if (st && this.fs.ignored(assetPath, st.isDir)) throw new CoreError('conflict', `${baseOf(assetPath)} 现在被忽略规则跳过，先改 .bbignore 再恢复`, { path: assetPath })
+    }
     let renamedTo: string | null = null
     if (this.existsSync(target)) {
       if (rename === false) throw new CoreError('conflict', `${dir || '根目录'} 里已经有一个同名文件`, { path: target })
@@ -1111,8 +1337,7 @@ export class LibraryServiceImpl implements LibraryService {
       const st = await this.fs.contentStat(target)
       const { meta: orig } = await this.freshRow(row)
       const at = nowIso()
-      const rec = await this.core.copyRecord({ id: orig.id, hash: orig.hash }, by, at)
-      const meta = this.core.copyMeta(orig, { hash: orig.hash, size: st?.size ?? row.size, by, at, recordId: rec.id })
+      const meta = this.core.copyMeta(orig, { hash: orig.hash, size: st?.size ?? row.size, by, at })
       if (orig.thumbnail) {
         // a manual thumbnail is part of what was copied
         try {
@@ -1333,7 +1558,7 @@ export class LibraryServiceImpl implements LibraryService {
 
   async lineage(id: Guid, q: LineageQuery): Promise<Lineage> {
     this.row404(id)
-    const types = q.types?.length ? q.types : ['source']
+    const types = q.types?.length ? q.types : ['source', 'reference']
     const depth = q.depth ?? 5
     const direction = q.direction ?? 'up'
     const edges = new Map<string, LineageEdge>()
@@ -1349,7 +1574,7 @@ export class LibraryServiceImpl implements LibraryService {
             const key = `${r.from_id}\u0000${r.type}\u0000${r.to_id}\u0000${r.slot}`
             if (!edges.has(key)) edges.set(key, {
               type: r.type, from: r.from_id, to: r.to_id, ...(r.slot ? { slot: r.slot } : {}), ...(r.note ? { note: r.note } : {}),
-              broken: !!r.broken || !this.store.row(r.to_id), stale: !!r.stale, ...(r.record ? { record: r.record } : {})
+              broken: !!r.broken || !this.store.row(r.to_id), stale: !!r.stale, ...(r.role ? { role: r.role } : {})
             })
             const other = up ? r.to_id : r.from_id
             if (seen.has(other)) continue
@@ -1364,13 +1589,9 @@ export class LibraryServiceImpl implements LibraryService {
     if (direction === 'down' || direction === 'both') walk(false)
     const existing = [...seen].filter(x => this.store.row(x))
     const missing = [...seen].filter(x => !this.store.row(x)).map(x => { const t = this.store.trashByAsset(x); return { id: x, name: t?.name ?? null, inTrash: !!t } })
-    const records: Record<string, ProductionRecord> = {}
-    for (const e of edges.values()) if (e.record && !records[e.record]) { const r = this.store.record(e.record); if (r) records[e.record] = r }
-    for (const x of existing) {
-      const o = this.store.row(x)!.origin
-      if (o && !records[o]) { const r = this.store.record(o); if (r) records[o] = r }
-    }
-    return { center: id, nodes: summaries(this.vd, existing), missing, edges: [...edges.values()], records }
+    const provenance: Record<string, Provenance> = {}
+    for (const x of existing) { const p = this.store.metaOf(x)?.provenance; if (p) provenance[x] = p }
+    return { center: id, nodes: summaries(this.vd, existing), missing, edges: [...edges.values()], provenance }
   }
 
   async versions(id: Guid): Promise<VersionsResponse> {
@@ -1486,7 +1707,7 @@ export class LibraryServiceImpl implements LibraryService {
     return this.write('relation.add', ctx, { id, type: rel.type, to: rel.to }, async () => {
       const by = this.actor(ctx)
       const { row, meta } = await this.current(id)
-      const [r] = this.prepareRelations([rel], null, id, true)
+      const [r] = this.prepareRelations([rel], id, true)
       const existing = meta.relations ?? []
       const clash = r!.slot
         ? existing.find(x => x.type === r!.type && x.slot === r!.slot)
@@ -1613,47 +1834,6 @@ export class LibraryServiceImpl implements LibraryService {
       }
     })
     return { affected, applied: true }
-  }
-
-  /* ───────────── production records ───────────── */
-
-  async createRecord(input: RecordInput, ctx: CallContext, plugin?: string): Promise<ProductionRecord> {
-    return this.write('record.create', ctx, { method: input.method }, () => this.doCreateRecord(input, ctx, plugin))
-  }
-
-  private async doCreateRecord(input: RecordInput, ctx: CallContext, plugin?: string): Promise<ProductionRecord> {
-    const inputs = (input.inputs ?? []).map(i => {
-      const row = this.store.row(i.id)
-      if (!row) throw new CoreError('validation_failed', `输入资产不存在：${i.id}`, { id: i.id })
-      return { id: i.id, hash: row.hash, ...(i.role ? { role: i.role } : {}) }
-    })
-    const rec: ProductionRecord = {
-      bb: FORMAT_VERSION, id: newRecordId(), method: input.method,
-      ...(input.tool ? { tool: input.tool } : {}), ...(plugin ? { plugin } : {}), ...(input.prompt ? { prompt: input.prompt } : {}),
-      ...(input.params ? { params: input.params } : {}), ...(inputs.length ? { inputs } : {}),
-      by: this.actor(ctx), at: nowIso(), ...(input.note ? { note: input.note } : {})
-    }
-    await this.core.writeRecord(rec)
-    return rec
-  }
-
-  async record(id: string): Promise<{ record: ProductionRecord; outputs: AssetSummary[] }> {
-    let rec = this.store.record(id)
-    if (!rec) { rec = await this.fs.readRecord(id); if (rec) this.store.upsertRecord(rec) }
-    if (!rec) throw new CoreError('not_found', `生产记录不存在：${id}`, { id })
-    return { record: rec, outputs: summaries(this.vd, this.store.recordOutputs(id)) }
-  }
-
-  async addRecordNote(id: string, text: string, ctx: CallContext): Promise<{ record: ProductionRecord; outputs: AssetSummary[] }> {
-    if (!text.trim()) throw new CoreError('validation_failed', '备注不能为空')
-    await this.write('record.note', ctx, { id }, async () => {
-      const rec = (await this.fs.readRecord(id)) ?? this.store.record(id)
-      if (!rec) throw new CoreError('not_found', `生产记录不存在：${id}`, { id })
-      // records are immutable except for appended notes
-      const next: ProductionRecord = { ...rec, notes: [...(rec.notes ?? []), { at: nowIso(), by: this.actor(ctx), text }] }
-      await this.core.writeRecord(next)
-    })
-    return this.record(id)
   }
 
   /* ───────────── folders ───────────── */
@@ -2136,9 +2316,11 @@ export class LibraryServiceImpl implements LibraryService {
         const b = this.store.row(String(details.otherId))
         if (!a || !b) throw new CoreError('not_found', '资产已经不在了')
         const [older, newer] = a.created_at < b.created_at || (a.created_at === b.created_at && a.path < b.path) ? [a, b] : [b, a]
-        const rec = await this.core.copyRecord({ id: older.id, hash: older.hash }, by)
         const { meta: nm } = await this.freshRow(newer)
-        await this.save(newer, { ...nm, relations: dedupeRelations([...(nm.relations ?? []), { type: 'source', to: older.id, toHash: older.hash, record: rec.id }]) }, by)
+        await this.save(newer, {
+          ...nm, relations: dedupeRelations([...(nm.relations ?? []), { type: 'source', to: older.id, toHash: older.hash }]),
+          ...(nm.provenance ? {} : { provenance: { method: 'copy', by, at: nowIso() } })
+        }, by)
         await this.core.integrity.refresh([newer.id, older.id])
         this.emit('relation.updated', { from: newer.id, type: 'source', to: older.id, op: 'added' })
         break
@@ -2543,7 +2725,7 @@ export class LibraryServiceImpl implements LibraryService {
       }
       if (!sidecarOk) next = null
       if (next) {
-        await this.core.writeMeta(row.path, next, { missing: !!row.missing })
+        await this.writeWorkedOut(row, next)
         if (added.length || removed.length) await this.core.integrity.refresh([id])
         for (const r of added) this.emit('relation.updated', { from: id, type: 'uses', to: r.to, op: 'added' })
         for (const r of removed) this.emit('relation.updated', { from: id, type: 'uses', to: r.to, op: 'removed' })
@@ -2651,7 +2833,7 @@ export class LibraryServiceImpl implements LibraryService {
           else still.push(n)
         }
         if (!added.length) return
-        await this.core.writeMeta(row.path, { ...meta, relations: [...(meta.relations ?? []), ...added] }, { missing: !!row.missing })
+        await this.writeWorkedOut(row, { ...meta, relations: [...(meta.relations ?? []), ...added] })
         this.store.prep('UPDATE probe SET unresolved_json = ? WHERE asset_id = ?').run(JSON.stringify(still), row.id)
         await this.core.integrity.refresh([row.id])
         for (const r of added) this.emit('relation.updated', { from: row.id, type: 'uses', to: r.to, op: 'added' })
@@ -2713,15 +2895,21 @@ export class LibraryServiceImpl implements LibraryService {
     })
   }
 
+  /**
+   * What the pipeline works out of a file (auxiliary, slot pairing) can always be worked out again: an asset with a
+   * .bmeta keeps it there, one the library only sees keeps it in the index only (ADR-067).
+   */
+  private async writeWorkedOut(row: AssetRow, next: Bmeta): Promise<void> {
+    if (row.sidecar) await this.core.writeMeta(row.path, next, { missing: !!row.missing })
+    else await this.core.indexOnly(row.path, next)
+  }
+
   async searchDoc(id: Guid): Promise<SearchDoc | null> {
     const row = this.store.row(id)
     if (!row) return null
     const meta = this.store.meta(row)
     const { tags, autoTags } = this.store.tagsOf(id)
-    const recIds = new Set<string>()
-    if (meta.origin) recIds.add(meta.origin)
-    for (const r of meta.relations ?? []) if (r.record) recIds.add(r.record)
-    const prompts = [...recIds].map(r => this.store.record(r)?.prompt).filter((p): p is string => !!p)
+    const prompts = meta.provenance?.prompt ? [meta.provenance.prompt] : []
     const probe = this.store.prep('SELECT text FROM probe WHERE asset_id = ?').get(id) as { text: string | null } | undefined
     const title = this.store.tech(id).title
     const text = [typeof title === 'string' ? title : '', probe?.text ?? ''].filter(Boolean).join('\n')
@@ -2779,7 +2967,6 @@ export class LibraryServiceImpl implements LibraryService {
 
   /** Load records and trash entries into the index (rebuild) before a full scan. */
   private async loadLibraryData(): Promise<void> {
-    for (const rec of await this.fs.listRecords()) this.store.upsertRecord(rec)
     const known = new Set(this.store.trashRows().map(t => t.id))
     const onDisk = new Set(await this.fs.listTrashIds())
     for (const id of onDisk) {
@@ -2796,7 +2983,78 @@ export class LibraryServiceImpl implements LibraryService {
     for (const id of known) if (!onDisk.has(id)) this.store.deleteTrash(id)
   }
 
+  /**
+   * A library written before ADR-070 keeps its production records in `.bowerbird/records/`: each record's content
+   * moves into the `provenance` of the assets it made (the outputs of one record share a batch id), record inputs
+   * become source relations with their roles, and the records folder is set aside (never deleted). Runs once, after
+   * the first full scan has indexed every asset.
+   */
+  private async convertLegacyRecords(): Promise<void> {
+    if (this.readOnly || !this.core.lib || !(await this.fs.hasLegacyRecords())) return
+    const recs = new Map((await this.fs.listRecords()).map(r => [r.id, r]))
+    await this.core.lock.run(async () => {
+      const recOf = (m: Record<string, unknown>): string | undefined => {
+        if (typeof m.origin === 'string') return m.origin
+        const r = ((m.relations as Array<Record<string, unknown>> | undefined) ?? []).find(x => typeof x.record === 'string')
+        return r?.record as string | undefined
+      }
+      const rows = this.store.allRows().filter(r => r.sidecar && !r.path.startsWith('.bowerbird/'))
+      const outputs = new Map<string, number>()
+      for (const row of rows) {
+        const m = this.store.meta(row) as Bmeta & Record<string, unknown>
+        // outputs converted by an earlier, interrupted pass still count (their batch is bat_<record id without rec_>)
+        const id = recOf(m) ?? (m.provenance?.batch?.startsWith('bat_') ? `rec_${m.provenance.batch.slice(4)}` : undefined)
+        if (id) outputs.set(id, (outputs.get(id) ?? 0) + 1)
+      }
+      let converted = 0
+      for (const row of rows) {
+        const meta = this.store.meta(row) as Bmeta & Record<string, unknown>
+        const recId = recOf(meta)
+        const hasLegacy = recId !== undefined || 'origin' in meta || (meta.relations ?? []).some(r => 'record' in r)
+        if (!hasLegacy) continue
+        const rec = recId ? recs.get(recId) : undefined
+        const next: Bmeta & Record<string, unknown> = { ...meta }
+        delete next.origin
+        const rels: Relation[] = (meta.relations ?? []).map(r => {
+          const { record: _r, ...rest } = r as Relation & { record?: unknown }
+          const role = rec?.inputs?.find(i => i.id === r.to)?.role
+          return { ...rest, ...(role && !rest.role && isMakingRelation(rest.type) ? { role } : {}) }
+        })
+        for (const inp of rec?.inputs ?? []) {
+          if (inp.id === meta.id || rels.some(r => isMakingRelation(r.type) && r.to === inp.id) || !this.store.row(inp.id)) continue
+          rels.push({ type: 'source', to: inp.id, toHash: inp.hash, ...(inp.role ? { role: inp.role } : {}) })
+        }
+        if (rels.length) next.relations = rels
+        else delete next.relations
+        if (rec && !meta.provenance) {
+          let params = rec.params
+          const rect = params?.rect
+          if (rect && typeof rect === 'object' && !Array.isArray(rect)) params = { ...params, rect: (rect as Record<string, unknown>)[meta.id] }
+          if (params && params.rect === undefined) { const { rect: _x, ...p } = params; params = p }
+          const notes = [rec.note, ...(rec.notes ?? []).map(n => n.text)].filter((t): t is string => !!t)
+          next.provenance = {
+            method: rec.method, ...(rec.tool ? { tool: rec.tool } : {}), ...(rec.plugin ? { plugin: rec.plugin } : {}),
+            ...(rec.prompt ? { prompt: rec.prompt } : {}), ...(params && Object.keys(params).length ? { params } : {}),
+            ...((outputs.get(rec.id) ?? 0) > 1 ? { batch: `bat_${rec.id.slice(4)}` } : {}),
+            by: rec.by, at: rec.at, ...(notes.length ? { note: notes.join('\n') } : {})
+          }
+        }
+        // a missing asset keeps its .bmeta where its file was (R7): rewrite it there, when it is there
+        if (row.missing && !(await this.fs.exists(row.path + SIDECAR_SUFFIX))) continue
+        await this.core.writeMeta(row.path, next, { missing: !!row.missing, checked: true })
+        converted++
+      }
+      // set the folder aside only once every asset has been converted and the scan saw the whole library: a stopped
+      // scan, or an asset that could not be rewritten, leaves it for the next full scan (nothing is lost meanwhile)
+      const left = this.store.allRows().some(r => { const m = this.store.meta(r) as Record<string, unknown>; return r.sidecar && ('origin' in m || ((m.relations as Array<Record<string, unknown>> | undefined) ?? []).some(x => 'record' in x)) })
+      if (left || this.scanner.stopping) { this.log.info('converted part of the production records of an older library; the rest on the next full scan', { assets: converted }); return }
+      const aside = await this.fs.setAsideRecords()
+      this.log.info('converted the production records of an older library into provenance', { assets: converted, records: recs.size, setAside: `.bowerbird/${aside}` })
+    })
+  }
+
   private async afterFullScan(): Promise<void> {
+    try { await this.convertLegacyRecords() } catch (e) { this.log.error('could not convert the production records of an older library', { error: String((e as Error)?.stack ?? e) }) }
     await this.core.lock.run(async () => this.refreshPluginIssues())
     await this.purgeExpired()
   }
@@ -2904,6 +3162,42 @@ export function applyTagEdit(current: string[], edit: TagEdit): string[] {
   if (edit.set) return uniqTags(edit.set)
   const remove = new Set(uniqTags(edit.remove))
   return uniqTags([...current.filter(t => !remove.has(t)), ...uniqTags(edit.add).filter(t => !remove.has(t))])
+}
+
+/** Identity of a relation for has / has-not: its type plus its slot, or its counterpart when it has no slot. */
+export function relKey(r: { type: string; to: string; slot?: string }): string {
+  return r.slot ? `${r.type}\u0000slot\u0000${r.slot}` : `${r.type}\u0000to\u0000${r.to}`
+}
+
+/**
+ * The provenance a wanted state asks for (ADR-070): `by` / `at` are stamped now; a batch id not said again is kept;
+ * the plugin that made the asset stays as long as the method does.
+ */
+export function provenanceOf(input: ProvenanceInput, before: Provenance | undefined, by: string, plugin?: string): Provenance {
+  const keepPlugin = plugin ?? (before?.plugin && before.method === input.method ? before.plugin : undefined)
+  const batch = input.batch ?? before?.batch
+  return {
+    method: input.method,
+    ...(input.tool ? { tool: input.tool } : {}),
+    ...(keepPlugin ? { plugin: keepPlugin } : {}),
+    ...(input.prompt ? { prompt: input.prompt } : {}),
+    ...(input.params && Object.keys(input.params).length ? { params: input.params } : {}),
+    ...(batch ? { batch } : {}),
+    by, at: nowIso(),
+    ...(input.note ? { note: input.note } : {})
+  }
+}
+
+/** Same provenance apart from who wrote it down and when. */
+export function sameProvenance(a: Provenance | undefined, b: Provenance | undefined): boolean {
+  if (!a || !b) return !a && !b
+  const strip = (p: Provenance) => { const { by: _b, at: _a, ...rest } = p; return canonicalJson(rest) }
+  return strip(a) === strip(b)
+}
+
+/** JSON with object keys sorted (order-insensitive comparison of parameters). */
+function canonicalJson(v: unknown): string {
+  return JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, (x as Record<string, unknown>)[k]])) : x))
 }
 
 /** One relation per (type, target) — slot relations are distinct per slot (data-model.md「语义约定」). */

@@ -20,7 +20,6 @@ export const qk = {
   jobs: (lib: string) => ['lib', lib, 'jobs'] as const,
   creators: (lib: string) => ['lib', lib, 'creators'] as const,
   cache: (lib: string) => ['lib', lib, 'cache'] as const,
-  record: (lib: string, id: string) => ['lib', lib, 'record', id] as const,
   plugins: () => ['plugins'] as const,
   config: () => ['config'] as const
 }

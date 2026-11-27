@@ -61,7 +61,7 @@ const detail = (o: Partial<AssetDetail> = {}): AssetDetail => ({
   issueCount: 0, size: 1, modified: '', created: '', createdBy: 'user:lin', bundle: false, auxiliary: false, memberCount: 0, cellText: null, missingPlugin: null,
   hash: 'sha256:22', descriptionFull: null, auto: null, fields: {}, reviewVerdict: null,
   versions: [{ hash: 'sha256:11', size: 1, at: '', by: 'user:lin' }, { hash: 'sha256:22', size: 1, at: '', by: 'user:lin' }],
-  views: null, thumbnailManual: false, origin: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
+  views: null, thumbnailManual: false, provenance: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
   relations: {
     outgoing: [
       { type: 'uses', from: '0192f3a4-7c1e-7b52-9d06-4e8a51c0d201', to: '0192f3a4-7c1e-7b52-9d06-4e8a51c0d202', target: null, targetName: 'chest_basecolor_dark.png', targetInTrash: false, slot: 'chest_basecolor.png', broken: false, stale: false },
@@ -69,7 +69,7 @@ const detail = (o: Partial<AssetDetail> = {}): AssetDetail => ({
     ],
     incoming: []
   },
-  issues: [], record: null, bundleFiles: null, targetSize: null, stages: [], ...o
+  issues: [], bundleFiles: null, targetSize: null, stages: [], ...o
 })
 
 describe('FileSource: slot names resolve through the .bmeta relations (ADR-018)', () => {

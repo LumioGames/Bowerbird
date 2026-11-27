@@ -107,14 +107,19 @@ describe('LibraryFs', () => {
     expect(await lfs.hash('b2')).not.toBe(h1)
   })
 
-  it('stores production records under records/<year>/<id>.json and finds them by id', async () => {
+  it('reads the production records of an older library and sets the folder aside (ADR-070)', async () => {
     const root = tmp()
     const lfs = new LocalLibraryFs(root)
+    expect(await lfs.hasLegacyRecords()).toBe(false)
     const rec = { bb: 1 as const, id: 'rec_0192f3a7-5c1e-7b3a-9d2f-4a6c8e0b1d23', method: 'ai-generate', prompt: '宝箱', by: 'agent:x', at: '2026-11-25T08:00:00Z' }
-    await lfs.writeRecord(rec)
-    expect(fs.existsSync(path.join(root, '.bowerbird/records/2026', `${rec.id}.json`))).toBe(true)
-    expect((await lfs.readRecord(rec.id))?.prompt).toBe('宝箱')
-    expect((await lfs.listRecords()).map(r => r.id)).toEqual([rec.id])
+    fs.mkdirSync(path.join(root, '.bowerbird/records/2026'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.bowerbird/records/2026', `${rec.id}.json`), JSON.stringify(rec))
+    expect(await lfs.hasLegacyRecords()).toBe(true)
+    expect((await lfs.listRecords()).map(r => r.prompt)).toEqual(['宝箱'])
+    const aside = await lfs.setAsideRecords()
+    expect(aside).toMatch(/^records-converted-\d{4}-\d{2}-\d{2}$/)
+    expect(await lfs.hasLegacyRecords()).toBe(false)
+    expect(fs.existsSync(path.join(root, '.bowerbird', aside, '2026', `${rec.id}.json`))).toBe(true)
   })
 
   it('rejects paths that escape the library', () => {

@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import {
   Bmeta, FOLDER_META_NAME, FolderMeta, LIBRARY_DIR, LibraryJson, ProductionRecord, SIDECAR_SUFFIX, SmartViewFile, TagsJson,
-  TrashInfo, FORMAT_VERSION, serializeBmeta, serializeFolderMeta, serializeJson, serializeRecord, joinPath
+  TrashInfo, FORMAT_VERSION, serializeBmeta, serializeFolderMeta, serializeJson, joinPath
 } from '@bowerbird/schema'
 import type { LibraryFs, SidecarBroken, SidecarRead } from '../contracts.js'
 import { bundleEntries, bundleStat, hashBundle, hashFile } from './hash.js'
@@ -203,38 +203,14 @@ export class LocalLibraryFs implements LibraryFs {
     await this.writeAbsAtomic(this.absolute(rel), serializeFolderMeta(meta as Record<string, unknown>))
   }
 
-  /* ───────────── production records ───────────── */
+  /* ───────────── production records of older libraries (read once, ADR-070) ───────────── */
 
-  private static yearOfRecordId(id: string): string | null {
-    const m = /^rec_([0-9a-f]{8})-([0-9a-f]{4})-7/.exec(id)
-    if (!m) return null
-    const ms = parseInt(m[1]! + m[2]!, 16)
-    const y = new Date(ms).getUTCFullYear()
-    return Number.isFinite(y) ? String(y) : null
+  /** Whether the library still has the records folder of a library written before ADR-070. */
+  async hasLegacyRecords(): Promise<boolean> {
+    try { return (await fsp.stat(this.metaAbs('records'))).isDirectory() } catch { return false }
   }
 
-  async readRecord(id: string): Promise<ProductionRecord | null> {
-    if (!/^rec_[\w-]+$/.test(id)) return null
-    const tryRead = async (year: string): Promise<ProductionRecord | null> => {
-      try {
-        const p = ProductionRecord.safeParse(JSON.parse(await fsp.readFile(this.metaAbs('records', year, `${id}.json`), 'utf8')))
-        return p.success ? p.data : null
-      } catch { return null }
-    }
-    const y = LocalLibraryFs.yearOfRecordId(id)
-    if (y) { const r = await tryRead(y); if (r) return r }
-    let years: string[] = []
-    try { years = await fsp.readdir(this.metaAbs('records')) } catch { return null }
-    for (const yy of years) { if (yy === y) continue; const r = await tryRead(yy); if (r) return r }
-    return null
-  }
-
-  async writeRecord(rec: ProductionRecord): Promise<void> {
-    const year = /^\d{4}/.exec(rec.at)?.[0] ?? LocalLibraryFs.yearOfRecordId(rec.id) ?? String(new Date().getUTCFullYear())
-    this.onWrite(`${LIBRARY_DIR}/records/${year}/${rec.id}.json`)
-    await this.writeAbsAtomic(this.metaAbs('records', year, `${rec.id}.json`), serializeRecord(rec as Record<string, unknown>))
-  }
-
+  /** Every readable record of `.bowerbird/records/` (conversion of an older library). */
   async listRecords(): Promise<ProductionRecord[]> {
     const out: ProductionRecord[] = []
     let years: string[] = []
@@ -251,6 +227,19 @@ export class LocalLibraryFs implements LibraryFs {
       }
     }
     return out
+  }
+
+  /**
+   * After the conversion: the records folder is set aside as `.bowerbird/records-converted-<date>`, never deleted
+   * (a person can still read it; nothing reads it any more). Returns the new folder name.
+   */
+  async setAsideRecords(): Promise<string> {
+    const stamp = new Date().toISOString().slice(0, 10)
+    let name = `records-converted-${stamp}`
+    for (let n = 2; await fsp.stat(this.metaAbs(name)).then(() => true, () => false); n++) name = `records-converted-${stamp}-${n}`
+    this.onWrite(`${LIBRARY_DIR}/records`)
+    await fsp.rename(this.metaAbs('records'), this.metaAbs(name))
+    return name
   }
 
   /* ───────────── hashing & stat ───────────── */

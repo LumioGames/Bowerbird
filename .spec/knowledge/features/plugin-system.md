@@ -139,7 +139,7 @@ export interface ServerPlugin {
 export interface PluginContext {
   readonly pluginId: string
   readonly pluginVersion: string
-  readonly library: LibraryReader        // 只读查询资产、关系、生产记录
+  readonly library: LibraryReader        // 只读查询资产、关系、出处
   readonly cache: CacheWriter            // 写入本插件产生的缓存文件
   readonly settings: SettingsReader      // 读取本插件的设置
   readonly log: Logger
@@ -178,14 +178,21 @@ export interface RegisterRequest {
   stage?: Stage                      // 物料阶段；缺省取文件夹的默认值
   tags?: string[]
   description?: string
-  relations?: RelationInput[]        // 来源、引用、归属
-  record?: RecordInput | string      // 生产记录，或已有记录的标识
+  relations?: RelationInput[]        // 来源、参考、引用、归属；来源与参考可带 role
+  provenance?: ProvenanceInput       // 出处：方式、工具、提示词、参数、批次号、备注
   views?: ViewGrid                   // 四视图的格子信息
+  review?: 'pending' | 'exempt'
   onConflict?: 'replace' | 'keep-both' | 'skip'   // 目标位置已有同名文件时的处理
 }
 ```
 
-内核收到登记结构后完成其余的事：落盘、写元数据文件、写生产记录、建来源关系并记下输入当时的内容指纹、送入处理管线。经插件登记的生产记录，`plugin` 一项由内核填上插件标识与版本；执行者记发起的人或 Agent，不记插件。生产记录的字段见 [`data-model.md`](data-model.md)。
+内核收到登记结构后完成其余的事：落盘、把这个产出想要的信息与现在的比较后写进它的元数据文件（ADR-068）、建来源关系并记下输入当时的内容指纹、送入处理管线。
+
+- 每个产出的出处写在它自己的元数据文件里（ADR-070）。`plugin` 一项由内核填上插件标识与版本；执行者记发起的人或 Agent，不记插件。
+- 同一次运行的产出，出处里带内核生成的同一个批次号。
+- 产出没给出处时，内核用这次运行的出处：创建写 `method = <插件标识>/<创建方式标识>` 与这次的参数，动作写 `method = <插件标识>/<动作标识>`。
+- 运行的输入成为每个产出的来源关系，带上输入的角色；产出自己给了来源或参考关系时，不再补。
+- 出处与关系的字段见 [`data-model.md`](data-model.md)。
 
 **格式**
 
@@ -216,7 +223,7 @@ export interface ProbeResult {
 }
 ```
 
-`references` 里的名字只表示「文件里有这样一个位置」，不表示引用的是谁。外部贴图名、`.bin` 文件名，以及打包在文件内的贴图的名字，都按位置名交给内核。位置对应哪个资产，由内核记在元数据文件里带 `slot` 的引用关系上，并以它为准：第一次读到时按文件名自动配上，之后重新提取不覆盖。`embedded` 里的名字照常配对，没配上时不算「引用的文件未找到」，因为文件里带着自己的一份。规则见 [`pipeline-and-cache.md`](pipeline-and-cache.md)。
+`references` 里的名字只表示「文件里有这样一个位置」，不表示引用的是谁。外部贴图名、`.bin` 文件名，以及打包在文件内的贴图的名字，都按位置名交给内核。位置对应哪个资产，由内核记在元数据文件里带 `slot` 的引用关系上，并以它为准：第一次读到时按文件名自动配上，之后重新提取不覆盖。还没有元数据文件的资产，配对只记在索引里（ADR-074）。`embedded` 里的名字照常配对，没配上时不算「引用的文件未找到」，因为文件里带着自己的一份。规则见 [`pipeline-and-cache.md`](pipeline-and-cache.md)。
 
 浏览器渲染的格式在网页部分实现渲染函数（见下文「网页接口」）。渲染失败时可以抛出带 `retryable` 的错误：`false` 表示重试也没用（例如浏览器解不了这种编码），任务立即失败；不带时按可重试处理（ADR-052）。
 
@@ -320,7 +327,8 @@ export interface ActionResult {
 
 - 动作的标识对外写成 `<插件标识>:<动作标识>`。
 - `GET /actions?ids=…` 按 `appliesTo` 列出适用于所选资产的动作，`POST /actions/{id}/runs` 执行。
-- 每次执行是队列里一个 `kind` 为 `action` 的任务，产出共用一条生产记录（ADR-052）。
+- 每次执行是队列里一个 `kind` 为 `action` 的任务，产出共用一个批次号（ADR-052、ADR-070）。
+- 动作经命令 `bb action` 与 MCP 工具 `bb_action` 出现，不必为插件单独补命令（ADR-071）。
 
 **入库来源**
 
@@ -348,7 +356,7 @@ export interface Creator {
   params: JsonSchema
   /** 接受哪些输入资产 */
   inputs: Array<{
-    role: string                     // 角色，例如参考图、蒙版、四视图；写进生产记录 inputs 的 role
+    role: string                     // 角色，例如参考图、蒙版、四视图；写进产出指向这个输入的来源关系的 role
     formats?: string[]               // 可接受的格式
     views?: boolean                  // 只接受四视图（元数据里有视图格子的资产，AssetSummary.hasViews）
     required: boolean
@@ -381,12 +389,13 @@ export interface JobContext {
 - 人和 Agent 都能发起。创建方式经接口列出、发起、查询，见 [`api-and-agent.md`](api-and-agent.md)。
 - 每次发起是队列里的一个创建任务，不绑定资产，与处理任务出现在同一个任务列表里，见 [`pipeline-and-cache.md`](pipeline-and-cache.md)。
 - 创建方式的标识对外写成 `<插件标识>:<创建方式标识>`。
-- 一次运行可以登记零个、一个或多个产出。同一次运行的产出共用一条生产记录；没有任何产出的运行不写生产记录，只留在任务日志里。插件没带记录时，内核按 `method = <插件标识>/<创建方式标识>`、参数与输入补一条。
+- 一次运行可以登记零个、一个或多个产出。每个产出各写一份出处，共用一个批次号；没有任何产出的运行什么都不写，只留在任务日志里。插件没给出处时，内核写 `method = <插件标识>/<创建方式标识>` 与这次的参数，输入成为来源关系。
+- 创建方式经命令 `bb create` 与 MCP 工具 `bb_create` 出现，不必为插件单独补命令（ADR-071）。
 - 创建任务失败不自动重试，可以手动重试；取消后为 `cancelled`，之后再 `register` 会被拒绝；服务重启时进行中的记为失败（ADR-052）。
 - 没挑中的产出不登记。候选文件放在插件的临时目录 `tmpDir` 里，不进资产库，不跟着同步，可以随时清理；内核不管候选产出。
 - 需要使用者挑选时，`progress()` 带上 `action`，外壳在任务列表、顶栏后台处理与提示条上显示这个按钮，点了打开插件页面；挑中的由插件调用 `register` 登记。
 - 需要自己界面的创建方式（例如无限画布）用界面扩展点登记页面，页面里调用的是同一个发起接口。
-- 插件创作的文件也是普通资产。例如画布插件把画布存成库里的一个文件，并作为格式插件认领它：新建走登记，之后每次保存走替换内容的接口。
+- 插件创作的文件也是普通资产。例如画布插件把画布存成库里的一个文件，并作为格式插件认领它：新建走登记，之后每次保存走替换内容的接口。替换内容后出处原样保留（ADR-074）。
 
 **访问控制**
 
@@ -560,4 +569,4 @@ export interface UiContributions {
 - 内置插件的具体行为：[`builtin-plugins.md`](builtin-plugins.md)。
 - 外壳的插槽：[`web-shell.md`](web-shell.md)。
 - 创建方式与插件管理的接口：[`api-and-agent.md`](api-and-agent.md)。
-- 决策：ADR-003、ADR-010、ADR-012、ADR-016、ADR-018、ADR-019、ADR-020、ADR-021、ADR-022、ADR-023、ADR-024、ADR-028、ADR-030、ADR-031、ADR-042、ADR-044、ADR-049、ADR-052、ADR-056。
+- 决策：ADR-003、ADR-010、ADR-012、ADR-016、ADR-018、ADR-019、ADR-020、ADR-021、ADR-022、ADR-023、ADR-024、ADR-028、ADR-030、ADR-031、ADR-042、ADR-044、ADR-049、ADR-052、ADR-056、ADR-068、ADR-070、ADR-071、ADR-074。

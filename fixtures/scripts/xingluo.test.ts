@@ -33,12 +33,12 @@ const glbJson = (buf: Buffer) => JSON.parse(buf.subarray(20, 20 + buf.readUInt32
 describe('「星落镇」sample library', () => {
   const report = verifyLibrary(LIB)
 
-  it('verifies clean: schema, hashes, records, relations — only the expected problems', () => {
+  it('verifies clean: schema, hashes, provenance, relations — only the expected problems', () => {
     expect(report.errors).toEqual([])
     const found = report.issues.map((i: { type: string; path: string }) => `${i.type} ${i.path}`).sort()
     expect(found).toEqual(EXPECTED.map((e: { type: string; path: string }) => `${e.type} ${e.path}`).sort())
     expect(report.stats.assets).toBe(72)
-    expect(report.stats.records).toBe(10)
+    expect(report.stats.provenance).toBeGreaterThan(20)
     expect(report.stats.trash).toBe(4)
     expect(report.stats.bytes).toBeLessThan(40 * 1024 * 1024)
   })
@@ -96,21 +96,25 @@ describe('「星落镇」sample library', () => {
     expect(fs.existsSync(path.join(LIB, '.bowerbird/cache'))).toBe(false)
   })
 
-  it('production records: built-in methods, prompts copied, inputs with roles; lantern_concept has an origin without inputs', () => {
-    const recDir = path.join(LIB, '.bowerbird/records/2026')
-    const recs = fs.readdirSync(recDir).map(f => JSON.parse(fs.readFileSync(path.join(recDir, f), 'utf8')))
-    for (const r of recs) expect(BUILTIN_METHODS).toContain(r.method)
-    const lantern = meta('props/lantern/lantern_concept.png')
-    const rec = recs.find(r => r.id === lantern.origin)!
-    expect(rec).toMatchObject({ method: 'ai-generate', tool: 'concept-gen 2.1', by: 'agent:concept-artist', params: { seed: 7730 } })
-    expect(rec.prompt).toContain('提灯的原画')
-    expect(rec.inputs).toBeUndefined()
-    const slice = recs.find(r => r.method === 'slice')!
-    expect(Object.keys(slice.params.rect)).toHaveLength(12)
-    const turn = recs.find(r => r.params?.template === '四视图')!
-    expect(turn.inputs).toEqual([{ id: meta('props/chest/chest_concept.png').id, hash: meta('props/chest/chest_concept.png').hash, role: '参考图' }])
-    // the most recent asset is the one the Agent just registered
+  it('provenance (ADR-070): built-in methods, prompts copied, inputs as source relations with roles; lantern_concept has one without inputs', () => {
+    expect(fs.existsSync(path.join(LIB, '.bowerbird/records'))).toBe(false)
     const all = [...walk(LIB)].filter((p: string) => p.endsWith('.bmeta') && !p.includes('_folder') && !p.includes('conflicted') && !p.startsWith('.bowerbird'))
+    const metas = all.map((p: string) => JSON.parse(fs.readFileSync(path.join(LIB, p), 'utf8')))
+    for (const m of metas) if (m.provenance) expect(BUILTIN_METHODS).toContain(m.provenance.method)
+    const lantern = meta('props/lantern/lantern_concept.png')
+    expect(lantern.provenance).toMatchObject({ method: 'ai-generate', tool: 'concept-gen 2.1', by: 'agent:concept-artist', params: { seed: 7730 } })
+    expect(lantern.provenance.prompt).toContain('提灯的原画')
+    expect(lantern.relations?.some((r: { type: string }) => r.type === 'source')).toBeFalsy()
+    // the twelve cut-outs: one batch, each with its own rect
+    // (btn_buy (1).png is a copy of btn_buy.png together with its .bmeta: same GUID, counted once)
+    const slices = [...new Map(metas.filter((m: { provenance?: { method: string } }) => m.provenance?.method === 'slice').map((m: { id: string }) => [m.id, m])).values()] as Array<{ provenance: { batch: string; params: { rect: number[] } } }>
+    expect(slices).toHaveLength(12)
+    expect(new Set(slices.map((m: { provenance: { batch: string } }) => m.provenance.batch)).size).toBe(1)
+    for (const m of slices) expect(m.provenance.params.rect).toHaveLength(4)
+    const turn = meta('props/chest/chest_turnaround.png')
+    expect(turn.provenance.params.template).toBe('四视图')
+    expect(turn.relations.filter((r: { type: string }) => r.type === 'source')).toEqual([{ type: 'source', to: meta('props/chest/chest_concept.png').id, toHash: meta('props/chest/chest_concept.png').hash, role: '参考图' }])
+    // the most recent asset is the one the Agent just registered
     const latest = all.map((p: string) => [p, JSON.parse(fs.readFileSync(path.join(LIB, p), 'utf8')).created.at]).sort((a: string[], b: string[]) => (a[1]! < b[1]! ? 1 : -1))[0]
     expect(latest[0]).toBe('props/lantern/lantern_concept.png.bmeta')
   })

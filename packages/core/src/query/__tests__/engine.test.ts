@@ -7,7 +7,7 @@ import { silentLogger } from '../../log.js'
 import { CoreError, type IndexDb, type QueryEngine } from '../../contracts.js'
 import { FLAG } from '../../index/ddl.js'
 import { fuse } from '../fusion.js'
-import { fakePlugins, gid, seedAsset, seedIssue, seedRecord, seedRelation, seedTrash } from './seed.js'
+import { fakePlugins, gid, seedAsset, seedIssue, seedRelation, seedTrash } from './seed.js'
 
 const human = { agent: false, scope: 'all' as const }
 const thumbnailUrl = (id: string, key: string | null): string | null => (key ? `/t/${id}/${key}` : null)
@@ -28,18 +28,16 @@ describe('QueryEngine filters', () => {
   beforeEach(() => {
     db = openMemoryIndexDb()
     q = engine(db)
-    ids.chest = seedAsset(db, { path: 'props/chest.glb', format: 'model', plugin: 'bowerbird.model', stage: 'runtime', review: 'approved', tags: ['宝箱', '道具'], aiTags: ['木头'], tech: { triangles: 2480, width: 0, rig: true, codec: 'none' }, created: '2026-11-02T00:00:00.000Z', modified: '2026-11-20T00:00:00.000Z', createdBy: 'agent:modeler', method: 'ai-generate', size: 5000 })
-    ids.chestTex = seedAsset(db, { path: 'props/tex/chest_albedo.png', format: 'image', plugin: 'bowerbird.image', stage: 'production', review: 'pending', tags: ['道具'], tech: { width: 2048, height: 2048 }, created: '2026-11-03T00:00:00.000Z', modified: '2026-11-03T00:00:00.000Z', createdBy: 'user:lin', size: 9000 })
+    ids.chest = seedAsset(db, { path: 'props/chest.glb', format: 'model', plugin: 'bowerbird.model', stage: 'runtime', review: 'approved', tags: ['宝箱', '道具'], aiTags: ['木头'], tech: { triangles: 2480, width: 0, rig: true, codec: 'none' }, created: '2026-11-02T00:00:00.000Z', modified: '2026-11-20T00:00:00.000Z', createdBy: 'agent:modeler', modifiedBy: 'user:lin', method: 'ai-generate', batch: 'bat_1', size: 5000 })
+    ids.chestTex = seedAsset(db, { path: 'props/tex/chest_albedo.png', format: 'image', plugin: 'bowerbird.image', stage: 'production', review: 'pending', tags: ['道具'], tech: { width: 2048, height: 2048 }, created: '2026-11-03T00:00:00.000Z', modified: '2026-11-03T00:00:00.000Z', createdBy: 'user:lin', method: 'manual', size: 9000 })
     ids.bin = seedAsset(db, { path: 'props/chest.bin', format: 'gltf-buffer', auxiliary: true, review: 'exempt', created: '2026-11-02T00:00:00.000Z', size: 100 })
     ids.concept = seedAsset(db, { path: 'concept/chest_concept.png', format: 'image', stage: 'reference', review: 'rejected', aiTags: ['宝箱'], tech: { width: 1024 }, created: '2026-10-01T00:00:00.000Z', modified: '2026-10-02T00:00:00.000Z', createdBy: 'agent:painter', issueLevel: 3, size: 300 })
     ids.doc = seedAsset(db, { path: 'docs/chest.md', format: 'doc', stage: 'reference', review: 'exempt', created: '2026-09-01T00:00:00.000Z', createdBy: 'user:wang', issueLevel: 1, size: 20, memberCount: 1 })
     ids.sfx = seedAsset(db, { path: 'audio/open.wav', format: 'audio', stage: 'runtime', review: 'pending', tags: ['废弃'], tech: { duration: 1.5 }, created: '2026-11-10T00:00:00.000Z', createdBy: 'user:lin', issueLevel: 2, size: 700 })
     seedRelation(db, ids.chest!, 'uses', ids.chestTex!, { slot: 'albedo.png' })
     seedRelation(db, ids.chest!, 'belongs', ids.doc!)
-    seedRelation(db, ids.chest!, 'source', ids.concept!, { record: 'rec_1' })
-    seedRecord(db, 'rec_1', 'ai-generate')
-    seedRelation(db, ids.chestTex!, 'source', ids.concept!, { record: 'rec_2' })
-    seedRecord(db, 'rec_2', 'manual')
+    seedRelation(db, ids.chest!, 'source', ids.concept!, { role: 'reference' })
+    seedRelation(db, ids.chestTex!, 'source', ids.concept!)
     seedIssue(db, ids.concept!, 'broken-reference', 'error')
     seedIssue(db, ids.sfx!, 'stale-upstream', 'warning')
     seedIssue(db, ids.doc!, 'duplicate-content', 'info')
@@ -72,8 +70,11 @@ describe('QueryEngine filters', () => {
     ['modified range', { modified: { after: '2026-11-15T00:00:00Z', before: '2026-11-30T00:00:00Z' } }, ['chest.glb']],
     ['by category', { by: 'agent' }, ['chest.glb', 'chest_concept.png']],
     ['by exact actor', { by: 'agent:painter' }, ['chest_concept.png']],
-    ['method from the record via the source relation', { method: ['manual'] }, ['chest_albedo.png']],
+    ['method from the provenance', { method: ['manual'] }, ['chest_albedo.png']],
     ['method column', { method: ['ai-generate'] }, ['chest.glb']],
+    ['batch: outputs of one run', { batch: 'bat_1' }, ['chest.glb']],
+    ['last editor (ADR-072)', { modifiedBy: 'user:lin' }, ['chest.glb', 'chest_albedo.png', 'open.wav']],
+    ['last editor by category', { modifiedBy: 'agent' }, ['chest_concept.png']],
     ['auxiliary included on request', { includeAuxiliary: true, folder: 'props' }, ['chest.bin', 'chest.glb', 'chest_albedo.png']],
     ['untagged = no human and no AI tags', { untagged: true }, ['chest.md']]
   ]

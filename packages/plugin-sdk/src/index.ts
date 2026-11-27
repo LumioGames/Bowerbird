@@ -4,6 +4,6 @@
  */
 export * from './server.js'
 export type {
-  AssetDetail, AssetSummary, Guid, Hash, Stage, ViewGrid, ProductionRecord, RegisterFields, RecordInput, RelationInput,
+  AssetDetail, AssetSummary, Guid, Hash, Stage, ViewGrid, Provenance, ProvenanceInput, RegisterFields, RelationInput,
   PluginManifest, CompareMode, CompareModeSupport, JobAction
 } from '@bowerbird/schema'

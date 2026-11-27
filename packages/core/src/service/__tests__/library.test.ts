@@ -76,9 +76,11 @@ describe('slot pairing (ADR-018)', () => {
     const normal = await up(t, 'props/chest_normal.png', 'normal')
     const other = await up(t, 'props/alt/chest_basecolor_v2.png', 'alt')
     await up(t, 'elsewhere/chest_orm.png', 'orm-outside')
-    // 1. first probe: names found in the same folder or below are paired automatically
+    // 1. first probe: names found in the same folder or below are paired automatically — worked out of the file, so it
+    // stays in the index while nobody has said anything about the model (ADR-067)
     await probe(t, model, ['chest_basecolor.png', 'chest_normal.png', 'chest_orm.png', 'chest.bin'])
-    let m = t.sidecar('props/chest.gltf')
+    expect(t.exists('props/chest.gltf.bmeta')).toBe(false)
+    let m = t.svc.store.metaOf(model)!
     expect(m.relations).toEqual([
       { type: 'uses', to: base, slot: 'chest_basecolor.png' },
       { type: 'uses', to: normal, slot: 'chest_normal.png' }
@@ -86,8 +88,12 @@ describe('slot pairing (ADR-018)', () => {
     let d = await t.svc.get(model, ctx)
     expect(d.unresolvedRefs).toEqual(['chest_orm.png', 'chest.bin'])
     expect(d.tech.triangles).toBe(2480)
-    // 2. an existing slot relation is never overwritten, even after being replaced
+    // 2. an existing slot relation is never overwritten, even after being replaced; a person's change writes the
+    // .bmeta, and the counterparts it names get theirs
     await t.svc.replaceRelation(model, { type: 'uses', to: base, slot: 'chest_basecolor.png', newTo: other }, ctx)
+    expect(t.sidecar('props/chest.gltf').relations?.find(r => r.slot === 'chest_basecolor.png')?.to).toBe(other)
+    expect(t.sidecar('props/alt/chest_basecolor_v2.png').id).toBe(other)
+    expect(t.sidecar('props/chest_normal.png').id).toBe(normal)
     await probe(t, model, ['chest_basecolor.png', 'chest_normal.png', 'chest_orm.png', 'chest.bin'])
     m = t.sidecar('props/chest.gltf')
     expect(m.relations?.find(r => r.slot === 'chest_basecolor.png')?.to).toBe(other)
@@ -122,6 +128,13 @@ describe('slot pairing (ADR-018)', () => {
   it('sets the auxiliary flag from the probe and stores tech, badge, text', async () => {
     const t = await lib()
     const bin = await up(t, 'm/a.bin', 'bin')
+    await t.svc.deps.applyProbe(bin, 'test.model', { tech: { bytes: 3, embedded: true, codec: 'x' }, auxiliary: true, badge: '3 B', text: '正文 内容' })
+    // worked out of the file: index only (ADR-067); an asset with a .bmeta keeps it there
+    expect(t.exists('m/a.bin.bmeta')).toBe(false)
+    expect(t.svc.store.metaOf(bin)!.auxiliary).toBe(true)
+    await t.keep('m/a.bin')
+    await t.svc.deps.applyProbe(bin, 'test.model', { tech: { bytes: 3, embedded: true, codec: 'x' }, auxiliary: false })
+    expect(t.sidecar('m/a.bin').auxiliary).toBeUndefined()
     await t.svc.deps.applyProbe(bin, 'test.model', { tech: { bytes: 3, embedded: true, codec: 'x' }, auxiliary: true, badge: '3 B', text: '正文 内容' })
     expect(t.sidecar('m/a.bin').auxiliary).toBe(true)
     const d = await t.svc.get(bin, ctx)
@@ -231,7 +244,7 @@ describe('folders', () => {
     expect(t.row(a)!.path).toBe('props/box/a.png')
     await t.svc.patchFolder({ path: 'props/box', moveTo: 'archive' }, ctx)
     expect(t.row(a)!.path).toBe('archive/box/a.png')
-    expect(t.sidecar('archive/box/a.png').id).toBe(a)
+    expect(t.idOf('archive/box/a.png')).toBe(a)
     await t.scan()
     expect(t.issues()).toEqual([])
   })
@@ -297,7 +310,9 @@ describe('issues', () => {
     expect(res.resolved).toEqual([list.issues[0]!.id])
     const rel = t.sidecar('b.png').relations?.[0]
     expect(rel).toMatchObject({ type: 'source', to: a })
-    expect((await t.svc.record(rel!.record!)).record.method).toBe('copy')
+    expect(t.sidecar('b.png').provenance?.method).toBe('copy')
+    // the original is named by a relation now: it has its .bmeta too (ADR-067)
+    expect(t.sidecar('a.png').id).toBe(a)
     expect((await t.svc.issues({})).total).toBe(0)
     await expect(t.svc.resolveIssue('nope', { action: 'ignore' }, ctx)).rejects.toMatchObject({ code: 'not_found' })
   })
@@ -319,6 +334,7 @@ describe('issues', () => {
   it('suggests relocation candidates and relocates a missing file (new content = new version)', async () => {
     const t = await lib()
     const id = await up(t, 'art/hero_idle.fbx', 'hero idle v1')
+    await t.keep('art/hero_idle.fbx')
     t.rm('art/hero_idle.fbx')
     await t.scan()
     t.write('art/new/hero_idle_final.fbx', 'hero idle v2!')
@@ -452,7 +468,8 @@ describe('batch, vocabulary, info', () => {
     await t.svc.patch(a, { tags: { add: ['宝箱'] } }, ctx)
     const v = await t.svc.vocabulary()
     expect(v.stages.map(s => s.name)).toEqual(['参考素材', '生产物料', '运行时物料'])
-    expect(v.relationTypes.map(r => r.id)).toEqual(['source', 'uses', 'belongs'])
+    expect(v.relationTypes.map(r => r.id)).toEqual(['source', 'reference', 'uses', 'belongs'])
+    expect(v.relationTypes.find(r => r.id === 'reference')).toMatchObject({ name: '参考', inverseName: '被参考', tracksVersion: false })
     expect(v.tags).toEqual([{ name: '宝箱', count: 1 }])
     expect(v.formats.map(f => f.id)).toEqual(['image', 'model', 'unknown'])
     const info = await t.svc.info(ctx)

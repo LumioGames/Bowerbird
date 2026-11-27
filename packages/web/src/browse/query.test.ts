@@ -78,6 +78,17 @@ describe('search box ↔ filter panel', () => {
     expect(r.filter.modified).toBeUndefined()
     expect(r.extras.when).toBeUndefined()
   })
+
+  it('last modifier (editor:) and one run\'s outputs (batch:) become chips and go away with them (ADR-072, ADR-070)', () => {
+    const r = absorbTyped(EMPTY_STATE, 'editor:agent:slicer batch:bat_shop ', false)
+    expect(r.filter).toMatchObject({ modifiedBy: 'agent:slicer', batch: 'bat_shop' })
+    const s = { ...EMPTY_STATE, filter: r.filter, extras: r.extras }
+    expect(chipsOf(s)).toEqual([{ key: 'editor', value: 'agent:slicer' }, { key: 'batch', value: 'bat_shop' }])
+    expect(stateFromParams(paramsFromState(s)).filter).toMatchObject({ modifiedBy: 'agent:slicer', batch: 'bat_shop' })
+    const a = removeChip(s, { key: 'editor', value: 'agent:slicer' })
+    expect(a.filter.modifiedBy).toBeUndefined()
+    expect(removeChip({ ...s, filter: a.filter }, { key: 'batch', value: 'bat_shop' }).filter).toEqual({})
+  })
 })
 
 describe('request', () => {

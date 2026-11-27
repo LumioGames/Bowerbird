@@ -39,7 +39,7 @@ export const UNNAMED_ACTOR = 'user:unnamed' as const
 export const SCANNER_ACTOR = 'system:scanner' as const
 
 /** Built-in relation types; plugins may register more (string). */
-export const BUILTIN_RELATION_TYPES = ['source', 'uses', 'belongs'] as const
+export const BUILTIN_RELATION_TYPES = ['source', 'reference', 'uses', 'belongs'] as const
 export type BuiltinRelationType = (typeof BUILTIN_RELATION_TYPES)[number]
 export const RelationType = z.string().min(1)
 export type RelationType = z.infer<typeof RelationType>

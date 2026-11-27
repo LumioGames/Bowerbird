@@ -11,21 +11,36 @@ afterEach(async () => { for (const t of libs) await t.close(); libs = []; cleanu
 
 const PNG = (s: string) => Buffer.from(`PNG:${s}`)
 
-describe('R1 new file without sidecar, new content → claim', () => {
-  it('generates a GUID, writes the sidecar and applies folder defaults', async () => {
+describe('R1 new file without sidecar, new content → seen (ADR-067)', () => {
+  it('generates a GUID in the index only, applies folder defaults, and writes the .bmeta once there is information', async () => {
     const t = await lib()
     fs.mkdirSync(t.abs('props/chest'), { recursive: true })
     await t.svc.patchFolder({ path: 'props', defaults: { stage: 'runtime', review: 'exempt', tags: ['道具'] } }, ctx)
     t.write('props/chest/chest.png', PNG('chest'))
     t.write('loose.png', PNG('loose'))
     await t.scan()
+    // only seen: nothing written beside the files
+    expect(t.exists('props/chest/chest.png.bmeta')).toBe(false)
+    expect(t.exists('loose.png.bmeta')).toBe(false)
+    const seen = t.rowByPath('props/chest/chest.png')!
+    expect(seen.sidecar).toBe(0)
+    expect(seen.stage).toBe('runtime')
+    expect(seen.modified_by).toBeNull()
+    expect(t.pipeline.calls.some(c => c.id === seen.id && c.stages === 'all')).toBe(true)
+    // a rescan keeps the same GUID while the index lives
+    await t.scan()
+    expect(t.idOf('props/chest/chest.png')).toBe(seen.id)
+    // saying something about it writes the .bmeta, with the same GUID and the folder defaults
+    await t.keep('props/chest/chest.png', 'loose.png')
     const m = t.sidecar('props/chest/chest.png')
     expect(m.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/)
     expect(m.stage).toBe('runtime')
     expect(m.tags).toEqual(['道具'])
     expect(m.review?.status).toBe('exempt')
+    expect(m.id).toBe(seen.id)
     expect(m.versions?.[0]?.by).toBe('system:scanner')
     expect(m.created.by).toBe('system:scanner')
+    expect(t.rowByPath('props/chest/chest.png')!.sidecar).toBe(1)
     const loose = t.sidecar('loose.png')
     expect(loose.stage).toBe('production')
     expect(effectiveReview(loose)).toBe('pending')
@@ -34,7 +49,6 @@ describe('R1 new file without sidecar, new content → claim', () => {
     expect(row.stage).toBe('runtime')
     expect(row.review).toBe('exempt')
     expect(t.issues()).toEqual([])
-    expect(t.pipeline.calls.some(c => c.id === m.id && c.stages === 'all')).toBe(true)
     // defaults apply once: changing the folder later does not touch existing assets
     await t.svc.patchFolder({ path: 'props', defaults: { stage: 'reference' } }, ctx)
     await t.scan()
@@ -80,7 +94,7 @@ describe('R2 / R6 new file with the content of a missing asset → reclaim', () 
     const t = await lib()
     t.write('a/x.png', PNG('x'))
     await t.scan()
-    const id = t.idOf('a/x.png')
+    const [id] = await t.keep('a/x.png')
     t.rm('a/x.png')
     await t.scan()
     expect(t.row(id)?.missing).toBe(1)
@@ -204,11 +218,22 @@ describe('R7 file gone, sidecar kept → missing', () => {
     expect(t.issues('missing-file')).toEqual([])
   })
 
+  it('a file that was only seen just leaves the index when it goes (ADR-067)', async () => {
+    const t = await lib()
+    t.write('seen.png', PNG('s'))
+    await t.scan()
+    const id = t.idOf('seen.png')
+    t.rm('seen.png')
+    await t.scan()
+    expect(t.row(id)).toBeUndefined()
+    expect(t.issues()).toEqual([])
+  })
+
   it('confirm-deleted moves only the record to the trash', async () => {
     const t = await lib()
     t.write('gone.png', PNG('g'))
     await t.scan()
-    const id = t.idOf('gone.png')
+    const [id] = await t.keep('gone.png')
     t.rm('gone.png')
     await t.scan()
     const issue = t.issues('missing-file')[0]!
@@ -257,8 +282,7 @@ describe('R9 two sidecars with the same GUID → the copy gets a new identity', 
     expect(copy.relations?.find(r => r.type === 'uses')?.to).toBe(dep)
     const src = copy.relations?.find(r => r.type === 'source')
     expect(src?.to).toBe(chest)
-    const rec = (await t.svc.record(src!.record!)).record
-    expect(rec.method).toBe('copy')
+    expect(copy.provenance?.method).toBe('copy')
     expect(copy.versions).toHaveLength(1)
     expect(copy.review).toBeUndefined()
     expect(t.sidecar('user.png').relations?.[0]?.to).toBe(chest)
@@ -279,7 +303,7 @@ describe('R9 two sidecars with the same GUID → the copy gets a new identity', 
     const t = await lib()
     t.write('a/x.png', PNG('x'))
     await t.scan()
-    const id = t.idOf('a/x.png')
+    const [id] = await t.keep('a/x.png')
     t.cp('a/x.png', 'b/x.png')
     t.cp('a/x.png.bmeta', 'b/x.png.bmeta')
     await t.reopen({ dropIndex: true })
@@ -297,7 +321,7 @@ describe('R9 without an index: copy-like names lose the tie (ADR-045)', () => {
       const t = await lib()
       t.write('ui/btn.png', PNG('btn'))
       await t.scan()
-      const id = t.idOf('ui/btn.png')
+      const [id] = await t.keep('ui/btn.png')
       t.cp('ui/btn.png', `ui/${copyName}`)
       t.cp('ui/btn.png.bmeta', `ui/${copyName}.bmeta`)
       // the copy looks older than the original (cp / git / cloud sync do not keep creation times)
@@ -353,7 +377,7 @@ describe('R10 unreadable sidecar or cloud conflict copy → metadata-conflict', 
     const t = await lib()
     t.write('shop.html', '<html>')
     await t.scan()
-    const id = t.idOf('shop.html')
+    const [id] = await t.keep('shop.html')
     const theirs = { ...t.sidecar('shop.html'), tags: ['商店', 'v2'] }
     fs.writeFileSync(t.abs('shop.html (lin 的 MacBook 冲突).bmeta'), JSON.stringify(theirs, null, 2))
     await t.scan()
@@ -387,7 +411,7 @@ describe('R11 relation to a GUID that does not exist → broken-reference', () =
     const t = await lib()
     t.write('a.png', PNG('a'))
     await t.scan()
-    const id = t.idOf('a.png')
+    const [id] = await t.keep('a.png')
     const ghost = '0192f3a7-0000-7000-8000-000000000000'
     t.setSidecar('a.png', { ...t.sidecar('a.png'), relations: [{ type: 'uses', to: ghost, slot: 'tex.png' }] })
     await t.scan()
@@ -410,7 +434,7 @@ describe('R12 source toHash differs from the upstream hash → stale-upstream', 
     t.write('down.png', PNG('down'))
     await t.scan()
     const up = t.idOf('up.png')
-    const down = t.idOf('down.png')
+    const [down] = await t.keep('down.png')
     t.setSidecar('down.png', { ...t.sidecar('down.png'), relations: [{ type: 'source', to: up, toHash: 'sha256:0000' }] })
     await t.scan()
     const s = t.issues('stale-upstream')
@@ -429,6 +453,8 @@ describe('rescan without changes', () => {
     t.write('a.png', PNG('a'))
     t.write('b.png', PNG('b'))
     t.write('docs/c.md', '# c')
+    await t.scan()
+    await t.keep('a.png', 'b.png')
     await t.scan()
     const reads = vi.spyOn(t.svc.fs, 'readSidecar')
     t.pipeline.yields.length = 0
@@ -467,7 +493,7 @@ describe('index rebuild', () => {
     await t.svc.addRelation(chest, { type: 'belongs', to: readme }, ctx)
     await t.svc.addRelation(tex, { type: 'source', to: readme }, ctx)
     await t.svc.review(chest, { status: 'approved' }, ctx)
-    await t.svc.register({ fields: { folder: 'gen', record: { method: 'ai-generate', prompt: '宝箱', inputs: [{ id: readme }] } }, file: { name: 'g.png', data: PNG('gen') } }, ctx)
+    await t.svc.register({ fields: { folder: 'gen', provenance: { method: 'ai-generate', prompt: '宝箱' }, relations: [{ type: 'source', to: readme, role: 'brief' }] }, file: { name: 'g.png', data: PNG('gen') } }, ctx)
     t.write('docs/readme.md', '# changed content')
     await t.scan()
     const ghostRel = { type: 'uses', to: '0192f3a7-0000-7000-8000-00000000abcd' }
@@ -476,16 +502,18 @@ describe('index rebuild', () => {
     await t.scan()
     await t.svc.trash(t.idOf('gen/g.png'), { force: true }, ctx)
 
+    // a file that was only seen gets a new GUID in a new index (nothing on disk names it, ADR-067): compare it by path
     const snapshot = () => {
       const db = t.svc.store.db
-      return {
-        assets: db.prepare('SELECT id, path, folder, name, ext, hash, size, stage, review, review_status, bundle, auxiliary, missing, created_at, created_by, modified_at, description, origin, method, flags, issue_level, issue_count, member_count, meta_json FROM assets ORDER BY id').all(),
-        tags: db.prepare('SELECT * FROM tags ORDER BY asset_id, tag, ai').all(),
+      const seen = db.prepare('SELECT id, path FROM assets WHERE sidecar = 0').all() as Array<{ id: string; path: string }>
+      const raw = JSON.stringify({
+        assets: db.prepare('SELECT id, path, folder, name, ext, hash, size, stage, review, review_status, bundle, auxiliary, missing, sidecar, created_at, created_by, modified_at, modified_by, description, method, batch, flags, issue_level, issue_count, member_count, meta_json FROM assets ORDER BY path').all(),
+        tags: db.prepare('SELECT t.* FROM tags t JOIN assets a ON a.id = t.asset_id ORDER BY a.path, t.tag, t.ai').all(),
         relations: db.prepare('SELECT * FROM relations ORDER BY from_id, type, to_id, slot').all(),
-        issues: db.prepare('SELECT id, type, level, asset_id, rel_type, rel_to, rel_slot, path, details_json FROM issues ORDER BY id').all(),
-        records: db.prepare('SELECT id, method, by, at, prompt, json FROM records ORDER BY id').all(),
+        issues: db.prepare('SELECT id, type, level, asset_id, rel_type, rel_to, rel_slot, path, details_json FROM issues ORDER BY type, path').all(),
         trash: db.prepare('SELECT id, asset_id, name, original_path, deleted_at, deleted_by, info_json FROM trash ORDER BY id').all()
-      }
+      })
+      return JSON.parse(seen.reduce((acc, r) => acc.split(r.id).join(`seen:${r.path}`), raw)) as Record<string, unknown[]>
     }
     const before = snapshot()
     expect((before.issues as unknown[]).length).toBeGreaterThan(0)
@@ -496,8 +524,8 @@ describe('index rebuild', () => {
     expect(after.tags).toEqual(before.tags)
     expect(after.relations).toEqual(before.relations)
     expect(after.issues).toEqual(before.issues)
-    expect(after.records).toEqual(before.records)
     expect(after.trash).toEqual(before.trash)
+    expect((before.assets as Array<{ path: string; sidecar: number }>).filter(a => !a.sidecar).map(a => a.path)).toEqual(['props/dup.png'])
   })
 })
 
@@ -541,9 +569,123 @@ describe('watcher', () => {
     await new Promise(r => setTimeout(r, 300))
     t.write('w/new.png', PNG('new'), -10)
     const deadline = Date.now() + 8000
-    while (Date.now() < deadline && !t.exists('w/new.png.bmeta')) await new Promise(r => setTimeout(r, 100))
+    while (Date.now() < deadline && !t.rowByPath('w/new.png')) await new Promise(r => setTimeout(r, 100))
     await t.svc.scanner.idle()
-    expect(t.exists('w/new.png.bmeta')).toBe(true)
     expect(t.rowByPath('w/new.png')).toBeDefined()
+    expect(t.exists('w/new.png.bmeta')).toBe(false)
   }, 15_000)
+})
+
+describe('ignore rules changed afterwards (ADR-067)', () => {
+  it('forgets files that were only seen and lets go of assets with a .bmeta: .bmeta to the trash, file stays', async () => {
+    const t = await lib()
+    t.write('proto/app.js', 'js')
+    t.write('proto/shot.png', PNG('shot'))
+    t.write('art/hero.png', PNG('hero'))
+    await t.scan()
+    const [shot] = await t.keep('proto/shot.png')
+    const hero = t.idOf('art/hero.png')
+    await t.svc.addRelation(hero, { type: 'reference', to: shot! }, ctx)
+    const seenJs = t.idOf('proto/app.js')
+    fs.writeFileSync(t.abs('.bbignore'), 'proto/\n')
+    t.svc.fs.reloadIgnore()
+    await t.scan()
+    expect(t.row(seenJs)).toBeUndefined()
+    expect(t.row(shot!)).toBeUndefined()
+    expect(t.exists('proto/shot.png')).toBe(true)
+    expect(t.exists('proto/shot.png.bmeta')).toBe(false)
+    const { items } = await t.svc.trashList()
+    expect(items.map(i => i.originalPath)).toEqual(['proto/shot.png.bmeta'])
+    // the reference now points at nothing the library knows: a broken reference, as after a delete
+    expect(t.issues('broken-reference').map(i => i.asset_id)).toEqual([hero])
+    // restoring is refused while the rule still matches
+    await expect(t.svc.restore(items[0]!.id, undefined, ctx)).rejects.toMatchObject({ code: 'conflict' })
+    // the rule goes: the .bmeta can come back with the same GUID
+    fs.rmSync(t.abs('.bbignore'))
+    t.svc.fs.reloadIgnore()
+    await t.scan()
+    await t.svc.restore(items[0]!.id, undefined, ctx)
+    await t.scan()
+    expect(t.idOf('proto/shot.png')).toBe(shot)
+    expect(t.issues('broken-reference')).toEqual([])
+  })
+
+  it('untrack: the .bmeta goes to the trash, the file stays and is only seen again', async () => {
+    const t = await lib()
+    t.write('a.png', PNG('a'))
+    await t.scan()
+    const [id] = await t.keep('a.png')
+    const r = await t.svc.untrack(id!, ctx)
+    expect(r.trashId).toBeTruthy()
+    expect(t.exists('a.png')).toBe(true)
+    expect(t.exists('a.png.bmeta')).toBe(false)
+    await t.scan()
+    const again = t.rowByPath('a.png')!
+    expect(again.id).not.toBe(id)
+    expect(again.sidecar).toBe(0)
+  })
+})
+
+describe('saying what an asset has (ADR-068)', () => {
+  it('writes only the difference; the same request twice writes nothing; a dry run writes nothing at all', async () => {
+    const t = await lib()
+    t.write('gen/shop.png', PNG('shop'))
+    t.write('proto/shop.png', PNG('proto'))
+    await t.scan()
+    const proto = t.idOf('proto/shop.png')
+    const item = {
+      path: 'gen/shop.png', stage: 'reference' as const, tags: { add: ['效果图'] },
+      provenance: { method: 'ai-generate', tool: 'gpt-image', prompt: '商店界面', params: { model: 'gpt-image-1', size: '1024x1536' } },
+      relations: { add: [{ type: 'reference', to: proto, role: 'layout' }] }
+    }
+    const dry = await t.svc.apply({ items: [item], dryRun: true }, ctx)
+    expect(dry.results[0]!.changes.map(c => c.field).sort()).toEqual(['provenance', 'relations', 'stage', 'tags'])
+    expect(t.exists('gen/shop.png.bmeta')).toBe(false)
+    const first = await t.svc.apply({ items: [item] }, ctx)
+    expect(first.results[0]!.changed).toBe(true)
+    const m1 = t.sidecar('gen/shop.png')
+    expect(m1.provenance).toMatchObject({ method: 'ai-generate', prompt: '商店界面', by: 'user:tester' })
+    expect(m1.relations).toEqual([{ type: 'reference', to: proto, toHash: t.row(proto)!.hash, role: 'layout' }])
+    // the counterpart is named by a relation now: it gets its .bmeta so the GUID survives a new index
+    expect(t.exists('proto/shop.png.bmeta')).toBe(true)
+    const again = await t.svc.apply({ items: [item] }, ctx)
+    expect(again.results[0]).toMatchObject({ changed: false, changes: [] })
+    expect(t.read('gen/shop.png.bmeta')).toBe(JSON.stringify(m1, null, 2) + '\n')
+    // a correction: the provenance is simply replaced (no record history, ADR-070)
+    await t.svc.apply({ items: [{ path: 'gen/shop.png', provenance: { ...item.provenance, prompt: '商店界面，夜晚' } }] }, ctx)
+    expect(t.sidecar('gen/shop.png').provenance?.prompt).toBe('商店界面，夜晚')
+    // a reference never reports「上游已更新」
+    t.write('proto/shop.png', PNG('proto again'))
+    await t.scan()
+    expect(t.issues('stale-upstream')).toEqual([])
+  })
+
+  it('answers every item on its own: one bad item never stops the others', async () => {
+    const t = await lib()
+    t.write('a.png', PNG('a'))
+    await t.scan()
+    const r = await t.svc.apply({ items: [{ path: 'nope.png', tags: { add: ['x'] } }, { path: 'a.png', tags: { add: ['x'] } }] }, ctx)
+    expect(r.results[0]!.error?.code).toBe('not_found')
+    expect(r.results[1]!.changed).toBe(true)
+    expect(r.newTags.map(n => n.tag)).toEqual(['x'])
+  })
+})
+
+describe('what a path may name (ADR-067)', () => {
+  it('a plain folder is not an asset, and a file inside a bundle is part of the bundle', async () => {
+    const t = await lib()
+    t.write('Textures/a.png', PNG('a'))
+    t.write('proto/index.html', '<p>')
+    await t.scan()
+    const [a] = await t.keep('Textures/a.png')
+    const r = await t.svc.apply({ items: [{ path: 'Textures', tags: { add: ['x'] } }] }, ctx)
+    expect(r.results[0]!.error?.code).toBe('validation_failed')
+    expect(t.exists('Textures.bmeta')).toBe(false)
+    await t.scan()
+    expect(t.row(a!)?.missing).toBe(0)
+    await t.svc.makeBundle('proto', 'index.html', ctx)
+    const inner = await t.svc.apply({ items: [{ path: 'proto/index.html', tags: { add: ['x'] } }] }, ctx)
+    expect(inner.results[0]!.error?.code).toBe('validation_failed')
+    expect(t.exists('proto/index.html.bmeta')).toBe(false)
+  })
 })

@@ -1,21 +1,18 @@
 /**
- * bb — init, serve, search, get, trace, add, tag, export, health, rescan, rm, plugin, mcp (api-and-agent.md「命令行」).
- * Every command takes `--json`. All but init/serve/plugin/mcp talk to a running server over the HTTP API
- * (`--server` / BOWERBIRD_URL, default http://127.0.0.1:7420; library `--library` or the server's default).
+ * bb — the local commands (init, serve, plugin, mcp) and one command per capability of the shared table
+ * (@bowerbird/mcp capabilities.ts, ADR-071): search, get, trace, add, apply, tag, retarget, export, health, resolve,
+ * changes, rescan, rm, untrack, create, action, vocabulary. Every command takes `--json`.
+ * A capability talks to the server named by `--server` / BOWERBIRD_URL; else to a server running on this machine;
+ * else it opens the library itself for the length of the command (ADR-069).
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander'
-import {
-  BowerbirdApiError, DEFAULT_HOST, DEFAULT_PORT, ISSUE_LEVELS, ISSUE_TYPES, ON_CONFLICT, SORT_KEYS, STAGES, createApiClient,
-  parseQueryText, type ApiClient, type PluginInfo, type RegisterResponse
-} from '@bowerbird/schema'
+import { BowerbirdApiError, DEFAULT_HOST, DEFAULT_PORT, type PluginInfo } from '@bowerbird/schema'
 import type { Hub, HubOptions } from '@bowerbird/core'
 import type { RunningServer, ServerOptions } from '@bowerbird/server'
 import {
-  detailText, downloadExport, encodeActorHeader, errorText, fileForUpload, issuesText, lineageText,
-  localAccess, newTagsText, overviewNote, registerText, relativeToRoot, resolveAssetId, resolveLibrary, searchText, summaryLine,
-  type McpOptions
+  CAPABILITIES, capContext, connect, errorText, libraryRootOf, writeServerFile, type ArgSpec, type Capability, type Connection, type McpOptions
 } from '@bowerbird/mcp'
 import { bowerbirdHome, locateAssets, type Located } from './locate.js'
 
@@ -32,13 +29,14 @@ export interface CliIO {
   locate?: () => Located
   /** Keep `serve` running until a signal (default true); tests turn it off. */
   installSignalHandlers?: boolean
+  /** Where to look for a server that does not announce itself (default http://127.0.0.1:7420; null = do not look). */
+  defaultUrl?: string | null
   /** Called with the running server (tests close it). */
-  onServe?: (s: { server: RunningServer; hub: Hub }) => void
+  onServe?: (s: { server: RunningServer; hub: Hub; forget: () => void }) => void
 }
 
 interface Globals { json?: boolean; server?: string; library?: string }
 
-const collect = (v: string, prev: string[] = []) => [...prev, ...v.split(',').map(s => s.trim()).filter(Boolean)]
 
 export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode: 0 }, mode: { json?: boolean } = {}): Command {
   const program = new Command()
@@ -63,23 +61,67 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
     if (globals(cmd).json) io.out(JSON.stringify(data, null, 2))
     else io.out(typeof text === 'function' ? text() : text)
   }
-  const serverUrl = (g: Globals) => (g.server ?? io.env.BOWERBIRD_URL ?? `http://${DEFAULT_HOST}:${DEFAULT_PORT}`).replace(/\/+$/, '')
-  const api = (cmd: Command): { client: ApiClient; lib: () => Promise<string>; base: string } => {
-    const g = globals(cmd)
-    const base = serverUrl(g)
-    // A bare name is a person: `lin` → `user:lin` (the server only takes user:/agent: actors).
-    const given = io.env.BOWERBIRD_ACTOR?.trim()
-    const actor = given ? encodeActorHeader(/^(user|agent):/.test(given) ? given : `user:${given}`) : undefined
-    const client = createApiClient({ baseUrl: base, actor, fetch: io.fetch })
-    let lib: Promise<string> | null = null
-    return { client, base, lib: () => (lib ??= resolveLibrary(client, g.library)) }
-  }
+  let localTurn: Promise<void> = Promise.resolve()
   const locate = () => (io.locate ?? locateAssets)()
+  const home = () => bowerbirdHome(io.env)
+  const defaultUrl = () => (io.defaultUrl === undefined ? `http://${DEFAULT_HOST}:${DEFAULT_PORT}` : io.defaultUrl)
   const hubFor = async (extra: Partial<HubOptions> = {}) => {
     const { pluginsDir } = locate()
-    return io.createHub({ home: bowerbirdHome(io.env), builtinPluginDirs: pluginsDir ? [pluginsDir] : [], watch: false, ...extra })
+    return io.createHub({ home: home(), builtinPluginDirs: pluginsDir ? [pluginsDir] : [], watch: false, ...extra })
   }
   const abs = (p: string) => path.resolve(io.cwd, p.replace(/^~(?=$|[\\/])/, io.env.HOME ?? '~'))
+  // A bare name is a person: `lin` → `user:lin` (the server only takes user:/agent: actors).
+  const actor = (): string | undefined => {
+    const given = io.env.BOWERBIRD_ACTOR?.trim()
+    return given ? (/^(user|agent):/.test(given) ? given : `user:${given}`) : undefined
+  }
+
+  /**
+   * No server runs: open the library in this process for one command (ADR-069) — the one named by `--library`, the
+   * one whose folder holds the working directory, or the machine's default. The start-up scan runs first; thumbnails
+   * and other processing wait for the next server.
+   */
+  const openLocal = (g: Globals) => async (): Promise<Connection> => {
+    // one library opened by this process at a time (MCP calls may come in together): the next waits for the close
+    const prev = localTurn
+    let done!: () => void
+    localTurn = new Promise<void>(r => { done = r })
+    await prev
+    try {
+      const conn = await openLocalOnce(g)
+      return { ...conn, close: async () => { try { await conn.close() } finally { done() } } }
+    } catch (e) { done(); throw e }
+  }
+  const openLocalOnce = async (g: Globals): Promise<Connection> => {
+    // another process holds the library (a command finishing, a server starting): wait a little before giving up
+    for (let waited = 0; ; waited += 250) {
+      const hub = await hubFor({ processing: false })
+      try {
+        const id = await pickLibrary(hub, g.library, io.cwd)
+        const svc = await hub.library(id)
+        await svc.ready?.()
+        const server = await io.startServer({ hub, host: '127.0.0.1', port: 0, defaultLibrary: id, print: () => undefined })
+        // the library is named on every call: a list of libraries would open every library of this machine
+        return { baseUrl: server.url, local: true, library: id, close: async () => { await server.close().catch(() => undefined); await hub.close() } }
+      } catch (e) {
+        await hub.close().catch(() => undefined)
+        if ((e as { code?: string }).code !== 'conflict' || !/另一个 Bowerbird 进程/.test(String((e as Error).message)) || waited >= 10_000) throw e
+        await new Promise(r => setTimeout(r, 250))
+      }
+    }
+  }
+
+  const connectFor = (g: Globals) => {
+    const root = libraryRootOf(io.cwd)
+    return connect({
+      ...(g.server ?? io.env.BOWERBIRD_URL ? { server: g.server ?? io.env.BOWERBIRD_URL } : {}),
+      home: home(), ...(io.fetch ? { fetch: io.fetch } : {}),
+      ...(defaultUrl() ? { defaultUrl: defaultUrl()! } : {}),
+      // a server found on this machine counts only when it has this library open
+      want: { ...(g.library ? { library: g.library } : {}), ...(root ? { root } : {}) },
+      openLocal: openLocal(g)
+    })
+  }
 
   /* ───────────── init / serve (local, no server needed) ───────────── */
 
@@ -110,7 +152,7 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
       if (opts.host) overrides.host = opts.host
       if (opts.port !== undefined) overrides.port = opts.port
       const hub = await io.createHub({
-        home: bowerbirdHome(io.env),
+        home: home(),
         builtinPluginDirs: located.pluginsDir ? [located.pluginsDir] : [],
         address: () => address,
         ...(Object.keys(overrides).length ? { overrides } : {})
@@ -131,6 +173,8 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
           print: t => io.err(t)
         })
         address = { host, port: server.port }
+        // commands on this machine find this server (ADR-069)
+        const forget = writeServerFile(home(), { pid: process.pid, url: server.url })
         const running = server
         print(cmd, { url: server.url, lanUrl: server.lanUrl, library, webDir: located.webDir, pluginsDir: located.pluginsDir }, () => [
           `Bowerbird 已启动：${running.url}`,
@@ -138,10 +182,10 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
           ...(located.webDir ? [] : ['没有找到构建好的网页外壳，只提供接口（先运行 pnpm build）']),
           ...(located.pluginsDir ? [] : ['没有找到内置插件目录'])
         ].join('\n'))
-        io.onServe?.({ server, hub })
+        io.onServe?.({ server, hub, forget })
         if (io.installSignalHandlers !== false) {
           const stop = async () => {
-            try { await running.close(); await hub.close() } finally { process.exit(0) }
+            try { forget(); await running.close(); await hub.close() } finally { process.exit(0) }
           }
           process.once('SIGINT', () => { void stop() })
           process.once('SIGTERM', () => { void stop() })
@@ -153,202 +197,20 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
       }
     })
 
-  /* ───────────── over the HTTP API ───────────── */
+  /* ───────────── one command per capability (ADR-071) ───────────── */
 
-  program.command('search')
-    .description('搜索，支持文本语法，例如 stage:runtime format:model tag:宝箱 tris:<5000 红色宝箱')
-    .argument('[query...]', '查询')
-    // `-tag:废弃` is part of the query, not an option.
-    .allowUnknownOption()
-    .option('--limit <n>', '返回条数（默认 50）', v => parseIntOpt(v, 'limit'))
-    .addOption(new Option('--sort <key>', '排序').choices([...SORT_KEYS]))
-    .option('--cursor <cursor>', '下一页游标')
-    .action(async (query: string[], opts: { limit?: number; sort?: (typeof SORT_KEYS)[number]; cursor?: string }, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const parsed = parseQueryText(query.join(' '))
-      const res = await client.search(await lib(), {
-        ...(parsed.q ? { q: parsed.q } : {}),
-        ...(Object.keys(parsed.filter).length ? { filter: parsed.filter } : {}),
-        ...(opts.sort ? { sort: opts.sort } : {}),
-        limit: opts.limit ?? 50,
-        ...(opts.cursor ? { cursor: opts.cursor } : {})
-      })
-      print(cmd, res, () => searchText(res))
-    })
-
-  program.command('get')
-    .description('详情')
-    .argument('<ref>', 'GUID 或路径')
-    .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const id = await resolveAssetId(client, l, ref, io.cwd)
-      const [asset, summary] = await Promise.all([client.assets.get(l, id), client.assets.summary(l, id).catch(() => null)])
-      print(cmd, { asset, summary }, () => `${detailText(asset, summary)}\n${overviewNote(summary)}`)
-    })
-
-  program.command('trace')
-    .description('追溯')
-    .argument('<ref>', 'GUID 或路径')
-    .addOption(new Option('--direction <dir>', '方向').choices(['up', 'down', 'both']).default('up'))
-    .option('--types <types>', '关系类型，逗号分隔（默认 source）', collect)
-    .option('--depth <n>', '最大层数（默认 5）', v => parseIntOpt(v, 'depth'))
-    .action(async (ref: string, opts: { direction: 'up' | 'down' | 'both'; types?: string[]; depth?: number }, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const id = await resolveAssetId(client, l, ref, io.cwd)
-      const res = await client.assets.lineage(l, id, { direction: opts.direction, types: opts.types, depth: opts.depth })
-      print(cmd, res, () => lineageText(res))
-    })
-
-  program.command('add')
-    .description('登记资产：上传文件（资产库里已有的文件就地登记），可带标签、阶段、来源、提示词')
-    .argument('<files...>', '文件')
-    .option('--folder <folder>', '目标文件夹（资产库内的相对路径）')
-    .addOption(new Option('--stage <stage>', '物料阶段').choices([...STAGES]))
-    .option('--tag <tag>', '标签，可重复或用逗号分隔', collect)
-    .option('--description <text>', '描述')
-    .option('--source <ref>', '来源资产（GUID 或路径），可重复', collect)
-    .option('--prompt <text>', '提示词（写入生产记录）')
-    .option('--method <method>', '生产方式，例如 ai-generate、manual、slice（有提示词时默认 ai-generate）')
-    .option('--tool <tool>', '工具（写入生产记录）')
-    .addOption(new Option('--on-conflict <mode>', '同名时的处理').choices([...ON_CONFLICT]))
-    .action(async (files: string[], opts: { folder?: string; stage?: (typeof STAGES)[number]; tag?: string[]; description?: string; source?: string[]; prompt?: string; method?: string; tool?: string; onConflict?: (typeof ON_CONFLICT)[number] }, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const sources = await Promise.all((opts.source ?? []).map(s => resolveAssetId(client, l, s, io.cwd)))
-      const fields = {
-        ...(opts.stage ? { stage: opts.stage } : {}),
-        ...(opts.tag?.length ? { tags: opts.tag } : {}),
-        ...(opts.description ? { description: opts.description } : {}),
-        ...(sources.length ? { relations: sources.map(to => ({ type: 'source', to })) } : {}),
-        ...(opts.onConflict ? { onConflict: opts.onConflict } : {})
-      }
-      let record: string | { method: string; tool?: string; prompt?: string; inputs?: Array<{ id: string }> } | undefined
-      if (opts.prompt || opts.method || opts.tool) {
-        record = {
-          method: opts.method ?? (opts.prompt ? 'ai-generate' : 'manual'),
-          ...(opts.tool ? { tool: opts.tool } : {}),
-          ...(opts.prompt ? { prompt: opts.prompt } : {}),
-          ...(sources.length ? { inputs: sources.map(id => ({ id })) } : {})
-        }
-        if (files.length > 1) record = (await client.records.create(l, record)).id
-      }
-      const access = await localAccess(client, l)
-      const registered: Array<{ file: string; result: RegisterResponse }> = []
-      let failed: { file: string; error: { code: string; message: string; details?: Record<string, unknown> }; notRun: string[] } | null = null
-      for (const [i, file] of files.entries()) {
-        try {
-          const p = abs(file)
-          const inLib = access.local ? relativeToRoot(access.info.root, p) : null
-          const result = inLib
-            ? await client.assets.register(l, { ...fields, ...(record ? { record } : {}), path: inLib })
-            : await client.assets.register(l, { ...fields, ...(record ? { record } : {}), ...(opts.folder !== undefined ? { folder: opts.folder } : {}) }, await fileForUpload(p))
-          registered.push({ file, result })
-        } catch (e) {
-          // Stop at the first failure and say what is already in the library.
-          const err = e instanceof BowerbirdApiError ? { code: e.code, message: e.message, ...(e.details ? { details: e.details } : {}) } : { code: 'internal', message: (e as Error)?.message ?? String(e) }
-          failed = { file, error: err, notRun: files.slice(i + 1) }
-          break
-        }
-      }
-      const f = failed
-      print(cmd, { registered, failed: f, ...(typeof record === 'string' ? { recordId: record } : {}) }, () => [
-        ...registered.map(r => registerText(r.result, r.file)),
-        ...(f ? [
-          `没有登记 ${f.file}：${f.error.message}`,
-          ...(f.notRun.length ? [`没有处理：${f.notRun.join('、')}`] : []),
-          ...(registered.length ? [`已登记的 ${registered.length} 个保留在资产库里`] : [])
-        ] : [])
-      ].join('\n'))
-      if (f) state.exitCode = 1
-    })
-
-  program.command('tag')
-    .description('增删标签')
-    .argument('<refs...>', 'GUID 或路径')
-    .option('--add <tag>', '添加的标签，可重复或用逗号分隔', collect)
-    .option('--remove <tag>', '移除的标签，可重复或用逗号分隔', collect)
-    .action(async (refs: string[], opts: { add?: string[]; remove?: string[] }, cmd: Command) => {
-      if (!opts.add?.length && !opts.remove?.length) throw new BowerbirdApiError(400, 'validation_failed', '用 --add 或 --remove 给出标签')
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const out: Array<Awaited<ReturnType<ApiClient['assets']['patch']>>> = []
-      for (const ref of refs) {
-        const id = await resolveAssetId(client, l, ref, io.cwd)
-        out.push(await client.assets.patch(l, id, { tags: { ...(opts.add?.length ? { add: opts.add } : {}), ...(opts.remove?.length ? { remove: opts.remove } : {}) } }))
-      }
-      print(cmd, out, () => out.flatMap(r => [summaryLine(r.asset), ...newTagsText(r.newTags)]).join('\n'))
-    })
-
-  program.command('export')
-    .description('导出到目录，可连同依赖一起导出（依赖按文件里写的名字写出）')
-    .argument('<refs...>', 'GUID 或路径')
-    .requiredOption('--to <dir>', '目标目录')
-    .option('--with-deps', '连同依赖一起导出')
-    .option('--flat', '不保留文件夹结构')
-    .action(async (refs: string[], opts: { to: string; withDeps?: boolean; flat?: boolean }, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const ids = await Promise.all(refs.map(r => resolveAssetId(client, l, r, io.cwd)))
-      const dir = abs(opts.to)
-      const req = { ids, withDeps: !!opts.withDeps, layout: opts.flat ? 'flat' as const : 'keep' as const }
-      const access = await localAccess(client, l)
-      if (access.local) {
-        const res = await (await client.exports.run(l, { ...req, dir })).json() as { written: number; dir: string; bytes: number }
-        print(cmd, res, `已导出 ${res.written} 个文件（${res.bytes} 字节）到 ${res.dir}`)
-      } else {
-        const res = await downloadExport(client, l, req, dir)
-        print(cmd, { written: res.written, dir, bytes: res.bytes, files: res.plan.files }, `已下载 ${res.written} 个文件（${res.bytes} 字节）到 ${dir}`)
-      }
-    })
-
-  program.command('health')
-    .description('列出完整性问题')
-    .option('--type <type>', `问题类型，可重复：${ISSUE_TYPES.join(' ')}`, collect)
-    .option('--level <level>', `级别，可重复：${ISSUE_LEVELS.join(' ')}`, collect)
-    .action(async (opts: { type?: string[]; level?: string[] }, cmd: Command) => {
-      for (const t of opts.type ?? []) if (!(ISSUE_TYPES as readonly string[]).includes(t)) throw new BowerbirdApiError(400, 'validation_failed', `没有这种问题类型：${t}`)
-      for (const t of opts.level ?? []) if (!(ISSUE_LEVELS as readonly string[]).includes(t)) throw new BowerbirdApiError(400, 'validation_failed', `没有这个级别：${t}`)
-      const { client, lib } = api(cmd)
-      const res = await client.issues.list(await lib(), { type: opts.type as never, level: opts.level as never })
-      print(cmd, res, () => issuesText(res))
-    })
-
-  program.command('rescan')
-    .description('触发扫描')
-    .argument('[path]', '只扫描这个文件夹（资产库内的相对路径）')
-    .action(async (p: string | undefined, _opts: unknown, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      await client.libraries.rescan(await lib(), p ? { path: p } : {})
-      print(cmd, { started: true, path: p ?? null }, `已开始扫描${p ? ` ${p}` : ''}`)
-    })
-
-  program.command('rm')
-    .description('移入回收站（被引用时需要 --force）')
-    .argument('<refs...>', 'GUID 或路径')
-    .option('--force', '被引用时也移入回收站')
-    .action(async (refs: string[], opts: { force?: boolean }, cmd: Command) => {
-      const { client, lib } = api(cmd)
-      const l = await lib()
-      const done: Array<{ id: string; trashId: string; referrers: string[] }> = []
-      const failed: Array<{ ref: string; code: string; message: string; details?: Record<string, unknown> }> = []
-      for (const ref of refs) {
-        try {
-          const id = await resolveAssetId(client, l, ref, io.cwd)
-          const r = await client.assets.remove(l, id, !!opts.force)
-          done.push({ id, ...r })
-        } catch (e) {
-          if (!(e instanceof BowerbirdApiError)) throw e
-          failed.push({ ref, code: e.code, message: e.message, ...(e.details ? { details: e.details } : {}) })
-        }
-      }
-      print(cmd, { trashed: done, failed }, () => [
-        ...done.map(d => `已移入回收站 ${d.id}${d.referrers.length ? `（仍被 ${d.referrers.length} 个资产引用）` : ''}`),
-        ...failed.map(f => `没有删除 ${f.ref}：${f.message}${f.code === 'referenced' ? '（确认要删除请加 --force）' : ''}`)
-      ].join('\n'))
-      if (failed.length) state.exitCode = 1
-    })
+  for (const cap of CAPABILITIES) addCapability(program, cap, async (cmd: Command, args: Record<string, unknown>) => {
+    const g = globals(cmd)
+    const conn = await connectFor(g)
+    try {
+      // the id the server knows (a --library given by name is resolved by connect / pickLibrary)
+      const library = conn.library ?? g.library
+      const ctx = capContext({ baseUrl: conn.baseUrl, actor: actor(), ...(library ? { library } : {}), ...(io.fetch ? { fetch: io.fetch } : {}), cwd: io.cwd, surface: 'cli' })
+      const r = await cap.run(ctx, args)
+      print(cmd, r.data, r.text)
+      if (r.failed) state.exitCode = 1
+    } finally { await conn.close() }
+  }, io.cwd)
 
   /* ───────────── plugins (local, no server needed) ───────────── */
 
@@ -396,16 +258,18 @@ export function buildProgram(io: CliIO, state: { exitCode: number } = { exitCode
   /* ───────────── MCP ───────────── */
 
   program.command('mcp')
-    .description('启动 MCP 服务（标准输入输出），供 Agent 使用；没有删除工具')
+    .description('启动 MCP 服务（标准输入输出），供 Agent 使用；工具与命令行的命令出自同一份定义，没有删除工具')
     .option('--name <name>', 'Agent 名称，执行者记为 agent:<名称>（默认 BOWERBIRD_AGENT）')
     .action(async (opts: { name?: string }, cmd: Command) => {
       const g = globals(cmd)
+      const server = g.server ?? io.env.BOWERBIRD_URL
       await io.runMcpServer({
-        baseUrl: serverUrl(g),
+        ...(server ? { baseUrl: server } : { home: home(), openLocal: openLocal(g), ...(defaultUrl() ? { defaultUrl: defaultUrl()! } : {}) }),
         ...(g.library ? { library: g.library } : {}),
         // The raw name: the MCP server prefixes and encodes it once (agentActor).
         actor: opts.name ?? io.env.BOWERBIRD_AGENT ?? '',
-        ...(io.fetch ? { fetch: io.fetch } : {})
+        ...(io.fetch ? { fetch: io.fetch } : {}),
+        cwd: io.cwd
       })
     })
 
@@ -421,6 +285,77 @@ function parseIntOpt(v: string, name: string): number {
   const n = Number(v)
   if (!Number.isInteger(n) || n < 1) throw new InvalidArgumentError(`--${name} 需要正整数：${v}`)
   return n
+}
+
+const kebab = (s: string) => s.replace(/[A-Z]/g, c => '-' + c.toLowerCase())
+const camel = (s: string) => s.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase())
+const collect = (v: string, prev: string[] = []) => [...prev, ...v.split(',').map(x => x.trim()).filter(Boolean)]
+
+/** A JSON value on the command line: inline, or `@<file>` to read it from a file. */
+function jsonArg(cwd: string) {
+  return (v: string): unknown => {
+    const text = v.startsWith('@') ? fs.readFileSync(path.resolve(cwd, v.slice(1)), 'utf8') : v
+    try { return JSON.parse(text) } catch { throw new InvalidArgumentError(`不是合法的 JSON：${v.length > 60 ? v.slice(0, 59) + '…' : v}`) }
+  }
+}
+
+/** The command-line form of one capability: positional arguments, then flags, all from its ArgSpec list. */
+function addCapability(program: Command, cap: Capability, run: (cmd: Command, args: Record<string, unknown>) => Promise<void>, cwd: string): void {
+  const cmd = program.command(cap.name).description(cap.summary)
+  if (cap.allowUnknownOptions) cmd.allowUnknownOption()
+  const specs = cap.args.filter(a => a.only !== 'mcp')
+  const positional = specs.filter(a => a.positional)
+  for (const a of positional) {
+    const n = a.name
+    cmd.argument(a.positional === 'many' ? (a.required ? `<${n}...>` : `[${n}...]`) : (a.required ? `<${n}>` : `[${n}]`), a.description)
+  }
+  for (const a of specs.filter(x => !x.positional)) cmd.addOption(optionOf(a, cwd))
+  cmd.action(async (...xs: unknown[]) => {
+    const c = xs[xs.length - 1] as Command
+    const opts = c.opts() as Record<string, unknown>
+    const args: Record<string, unknown> = {}
+    positional.forEach((a, i) => { const v = xs[i]; if (v !== undefined && !(Array.isArray(v) && !v.length)) args[a.name] = v })
+    for (const a of specs.filter(x => !x.positional)) {
+      const v = opts[camel(a.flag ?? kebab(a.name))]
+      if (v !== undefined) args[a.name] = v
+    }
+    await run(c, args)
+  })
+}
+
+function optionOf(a: ArgSpec, cwd: string): Option {
+  const flag = a.flag ?? kebab(a.name)
+  let o: Option
+  switch (a.kind) {
+    case 'boolean': o = new Option(`--${flag}`, a.description); break
+    case 'number': o = new Option(`--${flag} <n>`, a.description).argParser(v => parseIntOpt(v, flag)); break
+    case 'strings': o = new Option(`--${flag} <value>`, a.description + '（可重复或用逗号分隔）').argParser(collect); break
+    case 'json': o = new Option(`--${flag} <json>`, a.description + '（@文件 从文件读）').argParser(jsonArg(cwd)); break
+    case 'enum': o = new Option(`--${flag} <value>`, a.description).choices([...(a.choices ?? [])]); break
+    default: o = new Option(`--${flag} <value>`, a.description)
+  }
+  if (a.required) o.makeOptionMandatory()
+  return o
+}
+
+/** The library a command opens itself (ADR-069): the named one, the one holding `cwd`, or the machine's default. */
+async function pickLibrary(hub: Hub, given: string | undefined, cwd: string): Promise<string> {
+  const libs = hub.libraries()
+  if (given) {
+    const hit = libs.find(l => l.id === given || l.name === given)
+    if (!hit) throw new BowerbirdApiError(404, 'not_found', `这台电脑上没有登记资产库：${given}`)
+    return hit.id
+  }
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, '.bowerbird', 'library.json'))) {
+      const known = libs.find(l => path.resolve(l.root) === dir)
+      return known ? known.id : (await hub.addLibrary(dir)).id
+    }
+    if (path.dirname(dir) === dir) break
+  }
+  const id = hub.defaultLibraryId() ?? (libs.length === 1 ? libs[0]!.id : null)
+  if (!id) throw new BowerbirdApiError(404, 'not_found', libs.length ? '没有在运行的服务，也不知道要打开哪个资产库：在资产库文件夹里运行，或用 --library 指定' : '没有在运行的服务，这台电脑上也还没有登记资产库：先运行 bb init <文件夹>')
+  return id
 }
 
 /** Run the CLI; returns the exit code (serve keeps the process alive through its open server). */

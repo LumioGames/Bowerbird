@@ -25,11 +25,11 @@ const render = (el: React.ReactElement, s = shell()) => renderToStaticMarkup(Rea
 
 const forgeAsset = {
   id: '0192f3a4-7c1e-7b52-9d06-000000000001', name: 'forge_1234_1.png', path: 'props/lantern/forge_1234_1.png',
-  record: {
-    id: 'rec_x', method: 'community.forge/image', plugin: 'community.forge@0.4.0', tool: 'Forge 0.4.0', prompt: '提灯的原画：黄铜骨架',
-    params: { model: 'forge-xl 2.1', seed: 7730, size: '1536×1536' }, inputs: [{ id: '0192f3a4-7c1e-7b52-9d06-4e8a51c0d210', hash: 'sha256:00', role: '参考图' }],
-    by: 'user:mo', at: '2026-11-25T04:00:00Z'
-  }
+  provenance: {
+    method: 'community.forge/image', plugin: 'community.forge@0.4.0', tool: 'Forge 0.4.0', prompt: '提灯的原画：黄铜骨架',
+    params: { model: 'forge-xl 2.1', seed: 7730, size: '1536×1536' }, batch: 'bat_x', by: 'user:mo', at: '2026-11-25T04:00:00Z'
+  },
+  relations: { outgoing: [{ type: 'source', from: '0192f3a4-7c1e-7b52-9d06-000000000001', to: '0192f3a4-7c1e-7b52-9d06-4e8a51c0d210', role: '参考图', target: null, targetName: null, targetInTrash: false, broken: false, stale: false }], incoming: [] }
 } as unknown as AssetDetail
 
 describe('community.forge web', () => {
@@ -45,8 +45,8 @@ describe('community.forge web', () => {
   it('the detail tab only shows on what Forge made, with the run settings and「用同样的设置再生成…」', () => {
     const tab = ui.detailTabs![0]!
     expect(tab.appliesTo!(forgeAsset)).toBe(true)
-    expect(tab.appliesTo!({ ...forgeAsset, record: { ...forgeAsset.record!, plugin: undefined } } as AssetDetail)).toBe(false)
-    expect(tab.appliesTo!({ ...forgeAsset, record: null } as AssetDetail)).toBe(false)
+    expect(tab.appliesTo!({ ...forgeAsset, provenance: { ...forgeAsset.provenance!, plugin: undefined } } as AssetDetail)).toBe(false)
+    expect(tab.appliesTo!({ ...forgeAsset, provenance: null } as AssetDetail)).toBe(false)
     const html = render(React.createElement(tab.Component, { asset: forgeAsset }))
     for (const s of ['Forge 的这次生成', '方式', 'community.forge/image', '发起', 'user:mo', '参数', 'model forge-xl 2.1 · seed 7730 · size 1536×1536', '参考图', '提灯的原画：黄铜骨架', '用同样的设置再生成…']) expect(html).toContain(s)
     expect(render(React.createElement(tab.Component, { asset: forgeAsset }), shell('en'))).toContain('Generate again with these settings…')

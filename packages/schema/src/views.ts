@@ -4,7 +4,7 @@
  */
 import { z } from 'zod'
 import { Actor, CompareMode, Guid, Hash, IsoTime, JobStatus, PipelineStage, ReviewStatus, Stage, ThumbVariant, ViewGrid } from './primitives.js'
-import { AutoInfo, FolderDefaults, LibrarySettings, ProductionRecord, Review, VersionEntry } from './disk.js'
+import { AutoInfo, FolderDefaults, LibrarySettings, Provenance, Review, VersionEntry } from './disk.js'
 import { IssueType, Query } from './query.js'
 
 /* ───────────── issues ───────────── */
@@ -125,6 +125,8 @@ export const AssetSummary = z.object({
   missingPlugin: z.object({ id: z.string(), range: z.string().optional(), displayName: z.string().optional() }).nullable(),
   /** True when the asset is a turnaround sheet: its .bmeta has a view grid (`views`, ADR-019). Absent = no grid. */
   hasViews: z.boolean().optional(),
+  /** Library-relative path of its .bmeta; absent while the library only sees the file (nothing said about it yet, ADR-067). */
+  metaPath: z.string().optional(),
   /** Only with a query word: relevance and the snippet that matched outside the name. */
   score: z.number().optional(),
   hit: HitSnippet.optional()
@@ -146,7 +148,7 @@ export const RelationView = z.object({
   slot: z.string().optional(),
   note: z.string().optional(),
   toHash: Hash.optional(),
-  record: z.string().optional(),
+  role: z.string().optional(),
   broken: z.boolean(),
   stale: z.boolean(),
   /** For stale source relations: version numbers (1-based) the relation points at and the target is now at. */
@@ -190,7 +192,8 @@ export const AssetDetail = AssetSummary.extend({
   versions: z.array(VersionEntry),
   views: ViewGrid.nullable(),
   thumbnailManual: z.boolean(),
-  origin: z.string().nullable(),
+  /** How it was made (ADR-070); its inputs are the source / reference relations. */
+  provenance: Provenance.nullable(),
   modifiedBy: Actor.nullable(),
   /** Tech info from the format plugin (index only). */
   tech: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])),
@@ -201,8 +204,6 @@ export const AssetDetail = AssetSummary.extend({
   checks: z.array(CheckView),
   relations: z.object({ outgoing: z.array(RelationView), incoming: z.array(RelationView) }),
   issues: z.array(Issue),
-  /** The production record that made it (origin or first source relation with a record). */
-  record: ProductionRecord.nullable(),
   bundleFiles: z.array(BundleFile).nullable(),
   /** Design object target size from its front matter (documents) or the one this asset belongs to. */
   targetSize: z.object({ w: z.number(), h: z.number(), d: z.number(), from: Guid }).nullable(),
@@ -221,7 +222,7 @@ export const LineageEdge = z.object({
   note: z.string().optional(),
   broken: z.boolean(),
   stale: z.boolean(),
-  record: z.string().optional()
+  role: z.string().optional()
 })
 export type LineageEdge = z.infer<typeof LineageEdge>
 
@@ -231,7 +232,8 @@ export const Lineage = z.object({
   nodes: z.array(AssetSummary),
   missing: z.array(z.object({ id: Guid, name: z.string().nullable(), inTrash: z.boolean() })),
   edges: z.array(LineageEdge),
-  records: z.record(z.string(), ProductionRecord)
+  /** Provenance of the nodes that have one, by asset id. */
+  provenance: z.record(z.string(), Provenance)
 })
 export type Lineage = z.infer<typeof Lineage>
 

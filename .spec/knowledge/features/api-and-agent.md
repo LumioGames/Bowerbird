@@ -1,6 +1,6 @@
 ---
 name: api-and-agent
-description: 接口与 Agent——HTTP API 端点、错误模型、事件流、执行者留痕、MCP 工具、命令行、Agent 摘要与标签治理、监听地址与安全；对接 Agent 或改接口时查
+description: 接口与 Agent——HTTP API 端点、错误模型、事件流、执行者留痕、按想要的结果写入、命令行与 MCP 的能力表、命令免服务、Agent 摘要与标签治理、监听地址与安全；对接 Agent 或改接口时查
 metadata:
   type: doc
   status: 已交付
@@ -8,13 +8,14 @@ metadata:
 
 # 接口与 Agent
 
-Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都是它的客户端，没有任何一方享有私有接口。面向 Agent 的 MCP 工具与命令行是对这套 API 的薄封装。请求与响应的结构定义在 `packages/schema` 的 `api.ts`，端点清单是其中的 `ENDPOINTS`。
+Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都是它的客户端，没有任何一方享有私有接口。命令行的命令与 MCP 的工具出自同一份能力定义，即 `packages/mcp` 的 `capabilities.ts`（ADR-071）。请求与响应的结构定义在 `packages/schema` 的 `api.ts`，端点清单是其中的 `ENDPOINTS`。
 
 ## 背景 / 目标
 
 - Agent 要能完成搜索、追溯、登记、修改、取用的完整闭环。
 - Agent 的上下文有限，返回内容要精简，并且让它一眼看清资产的阶段与状态。
-- AI 生产流程里，Agent 生成一个资产后要能一次性登记它的来源和提示词。
+- AI 生产流程里，Agent 生成一个资产后要能一次性登记它的来源和提示词；批量登记、试运行、重跑都要安全。
+- 不开服务也能读写资产库。
 - 创建插件提供的创建方式，人和 Agent 都要能发起。
 - 内核不做登录，所以默认必须是安全的。
 
@@ -39,14 +40,14 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
   - 网页外壳用设置里填的名字；装了访问控制插件时，以插件识别出的名字为准（ADR-049）。
 - 只有搜索用游标分页，其余列表一次返回全部。
 - 时间为 UTC 的 ISO 8601 字符串。
-- 内核不记改动历史。写操作只在本机的运行日志里留一行，用于排查问题；接口不提供「谁在什么时候改了什么」的查询。
+- 内核不记改动历史，也不做撤销（ADR-024、ADR-072）。写操作只在本机的运行日志里留一行，用于排查问题。「谁最后改了哪些资产」用搜索按最后修改者查，见下文的 `changes`。
 
 **状态码**
 
 | 状态 | 用于 |
 |------|------|
 | 200 | 一般的成功；登记时跳过了同名文件也是 200 |
-| 201 | 新建：添加资产库、安装插件、登记资产、复制、新建生产记录、新建文件夹、把文件夹作为一个资产 |
+| 201 | 新建：添加资产库、安装插件、登记资产、复制、新建文件夹、把文件夹作为一个资产 |
 | 202 | 先答复、后台继续：开始扫描、执行创建方式、执行动作 |
 | 204 | 没有响应体：打开、在文件夹中显示、停止扫描、删除插件、彻底删除回收项、清空回收站、取消任务、重试任务、交回渲染结果 |
 | 206 | 范围请求 |
@@ -74,7 +75,7 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `not_found` | 404 | 资产、资产库或资源不存在；资产库文件夹现在访问不到 |
 | `not_local` | 403 | 这个操作在服务所在的机器上执行，只接受那台机器发来的请求：打开源文件、在文件夹中显示（资产与资产库）、导出到目录 |
 | `validation_failed` | 400 | 请求内容不合法；结构校验失败时 `details.issues` 列出各处问题 |
-| `conflict` | 409 | 目标路径已存在、元数据文件已被别处改过等冲突 |
+| `conflict` | 409 | 目标路径已存在、元数据文件已被别处改过、资产库正被另一个进程写等冲突 |
 | `referenced` | 409 | 删除被拒绝，因为资产被引用 |
 | `cycle` | 409 | 来源关系会成环 |
 | `unsupported` | 501 | 需要的插件未安装，例如读取旧版本内容 |
@@ -97,8 +98,8 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `GET /fs/folders?path=` | 列出服务所在电脑上某个文件夹里的文件夹（选文件夹对话框）：只列文件夹，不读文件；以点开头的不列；标出已是资产库的；最多 2,000 个。只接受本机请求（ADR-049、ADR-063） |
 | `GET /libraries/{library}` | 一个库的信息、统计、需要的插件、版本插件、文件监听状态、监听地址，以及当前请求是否来自服务所在的机器 |
 | `PATCH /libraries/{library}` | 修改库设置，例如回收站保留天数 `trashDays` |
-| `POST /libraries/{library}/init` | 首次打开已有文件的文件夹时开始登记；进度看 `scan.progress` |
-| `POST /libraries/{library}/rescan/stop` | 停止扫描或登记，下次接着做 |
+| `POST /libraries/{library}/init` | 首次打开已有文件的文件夹时开始扫描；不在文件旁边写任何东西（ADR-067）；进度看 `scan.progress` |
+| `POST /libraries/{library}/rescan/stop` | 停止扫描，下次接着做 |
 | `POST /libraries/{library}/reveal` | 在文件夹中显示资产库根文件夹，只接受本机请求 |
 | `GET /config`、`PATCH /config` | 读写保存下来的本机配置：监听地址与端口、缓存目录、扫描间隔、并发数、允许的来源、插件的本机设置；读出时附带本机数据目录与是否需要重启（这次运行里改过只在启动时生效的项、且与这次运行用的不同；命令行参数不算） |
 
@@ -131,8 +132,10 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `POST /search` | 搜索，请求体为查询模型，可要求分面 |
 | `GET /assets/{id}` | 资产详情，含技术信息、分析结果、规则检查结果、两个方向的关系、没找到的位置名与相关问题 |
 | `POST /assets/precheck` | 上传预检：给出目标文件夹与文件名，返回哪些会与已有文件同名 |
-| `POST /assets` | 登记新资产：上传文件，或登记资产库内已存在的路径；可用 `onConflict` 指定同名时的处理 |
-| `PATCH /assets/{id}` | 修改标签（按增删）、描述、阶段、自定义字段、附属标记、格子信息 |
+| `POST /assets` | 登记资产：上传文件，或登记资产库内已存在的路径；可用 `onConflict` 指定上传时同名的处理 |
+| `POST /assets/apply` | 按想要的结果写入一批资产的信息，只写有差别的部分；`dryRun` 只比较（ADR-068） |
+| `PATCH /assets/{id}` | 修改标签（按增删）、描述、阶段、出处、自定义字段、附属标记、格子信息；与 `apply` 同一个比较 |
+| `POST /assets/{id}/untrack` | 移出资产库、不动文件：元数据文件移入回收站，文件留在原处（ADR-067） |
 | `DELETE /assets/{id}` | 移入回收站；被引用时需带 `force=true` |
 | `POST /assets/{id}/content` | 替换内容，产生新版本 |
 | `POST /assets/{id}/move` | 移动或改名，可带 `onConflict` |
@@ -148,13 +151,13 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `GET /assets/{id}/thumbnail` | 缩略图，`variant` 取 `thumb`、`preview`、`poster`、`scrub`、`peaks`、`turnaround`；带 `v` 时可以长期缓存 |
 | `PUT /assets/{id}/thumbnail`、`DELETE /assets/{id}/thumbnail` | 写入与清除手动缩略图 |
 | `GET /assets/{id}/summary` | Agent 摘要：文字与概览图 |
-| `GET /assets/{id}/lineage` | 追溯，可指定方向、关系类型、深度 |
+| `GET /assets/{id}/lineage` | 追溯，可指定方向、关系类型、深度；每个资产带它的出处 |
 | `GET /assets/{id}/versions` | 版本记录 |
 | `GET /assets/{id}/versions/{hash}/file` | 某个历史版本的文件内容，需要版本插件 |
 | `POST /assets/{id}/versions/{hash}/restore` | 恢复为某个历史版本，需要版本插件 |
-| `POST /assets/batch` | 批量修改，对多个资产应用同一组改动；资产可以逐个列出，也可以用一个查询指定（最多 1 万个）。总是返回 200，逐项列出成功与失败；`updated` 只列真的改了的资产，移动时因重名跳过的、目标就是原位置的，既不在 `updated` 也不在 `failed` |
+| `POST /assets/batch` | 批量修改，对多个资产应用同一组改动；资产可以逐个列出，也可以用一个查询指定（最多 1 万个）。标签与阶段走与 `apply` 同一个比较。总是返回 200，逐项列出成功与失败；`updated` 只列真的改了的资产，移动时因重名跳过的、目标就是原位置的，既不在 `updated` 也不在 `failed` |
 
-**关系与生产记录**
+**关系**
 
 | 方法与路径 | 作用 |
 |------------|------|
@@ -163,9 +166,8 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `POST /assets/{id}/relations/replace` | 更换关系：以关系类型与原对方指定一条关系，给出新对方 |
 | `POST /assets/{id}/relations/acknowledge` | 确认已复核上游更新，把 `toHash` 更新为对方当前指纹 |
 | `POST /relations/retarget` | 批量更换：把指向某个资产的关系全部换成指向另一个资产；默认只预览，`dryRun: false` 才执行；只给 Agent 用，界面上不出现 |
-| `POST /records` | 新建生产记录 |
-| `GET /records/{id}` | 读取生产记录 |
-| `POST /records/{id}/notes` | 给生产记录追加备注 |
+
+一批产出用搜索条件 `batch` 查，不另设端点（ADR-074）。
 
 **文件夹、标签、视图**
 
@@ -236,7 +238,7 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 
 | 事件 | 含义 |
 |------|------|
-| `asset.created`、`asset.updated`、`asset.removed` | 资产的新增、变化、移除；`asset.updated` 带上变了哪些字段，`asset.removed` 带原因（回收站、缺失、彻底删除） |
+| `asset.created`、`asset.updated`、`asset.removed` | 资产的新增、变化、移除；`asset.updated` 带上变了哪些字段，`asset.removed` 带原因（回收站、缺失、彻底删除、只被看见的文件不在了、移出资产库） |
 | `asset.thumbnail` | 缩略图就绪 |
 | `relation.updated` | 关系的新增、更换、删除、确认已复核 |
 | `tags.updated` | 标签定义的变化 |
@@ -254,17 +256,65 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 - 积压超过 1 MiB 的慢客户端会被断开。
 - 不带事件编号，断线后不补发，客户端重连后重新拉取。
 
-### 登记资产
+### 写入信息
 
-登记是 Agent 生产流程的核心操作，一次请求可以同时完成：
+写入算不出来的信息时，请求说的是想要的结果，不是要执行的动作（ADR-068）。内核拿它和资产现在的样子比，只写有差别的部分。同一份请求再说一次，没有差别，什么都不写。
 
-1. 上传文件到指定文件夹，或登记一个已经放进资产库的文件。
-2. 设置阶段、标签、描述。
-3. 建立关系：来源、引用、归属。
-4. 附带一条生产记录：方式、工具、提示词、参数、输入资产。
-5. 图片是四视图时，带上格子信息。
+- 标签与关系按「有这一项」「没有这一项」来说（`add`、`remove`），不整组替换。两个人同时改同一个资产时互不覆盖（ADR-038）。
+- 上传登记、按路径登记、`PATCH /assets/{id}`、批量修改的标签与阶段，都走同一个比较。比较与写入的逻辑只在内核里有一份。
+- 上传、移动、改名、删除、替换内容、从回收站恢复改的是文件本身，仍然是动作。`onConflict` 只属于上传。
+- 第一次给只被看见的文件写信息时，内核写出它的元数据文件，GUID 不变（ADR-067）。
+- 由此得到三种用法：一份清单批量写；试运行只比不写；重跑安全。
 
-`POST /assets` 的请求内容（上传时放在 multipart 的 `meta` 部分）：
+**`POST /assets/apply`**
+
+请求是 `{ items, dryRun? }`，`items` 1 到 1 万项。每一项是一个资产想要的信息，没写的键保持原样：
+
+| 字段 | 说明 |
+|------|------|
+| `id` 或 `path` | 指明资产。`path` 可以指只被看见的文件，也可以指还没被扫描到的文件：先把它看进索引再比较 |
+| `stage` | 物料阶段 |
+| `tags` | `{ add, remove }`：有哪些标签、没有哪些标签 |
+| `description` | 描述；`""` 或 `null` 清除 |
+| `review` | `exempt` 免审；`pending` 去掉免审，别人给过的结论保留 |
+| `provenance` | 出处，见下；`null` 清除 |
+| `relations` | `{ add: [{ type, to, slot?, role?, note? }], remove: [{ type, to, slot? }] }` |
+| `views` | 四视图的格子信息；`null` 清除 |
+| `fields` | 自定义字段，按命名空间；某个命名空间给 `null` 表示去掉 |
+| `auxiliary` | 附属标记 |
+
+回答逐项列出，一项失败不影响其他项（ADR-074）：
+
+```jsonc
+{
+  "results": [
+    { "index": 0, "id": "<GUID>", "path": "props/chest.png", "changed": true,
+      "changes": [{ "field": "tags", "before": ["宝箱"], "after": ["宝箱", "道具"] }] },
+    { "index": 1, "id": null, "path": "props/nope.png", "changed": false, "changes": [],
+      "error": { "code": "not_found", "message": "…" } }
+  ],
+  "dryRun": false,
+  "newTags": [{ "tag": "道具", "similar": ["道具类"] }]
+}
+```
+
+- 带 `dryRun` 时 `changed` 表示「会改」。试运行的结果带每处「改之前」的值；调用方想留后路，自己存下这份结果，需要时把「改之前」再说一遍。内核不做撤销（ADR-072）。
+- 已有的关系再说一次时，不改它记着的对方版本：重新说一遍不等于「已复核」（ADR-074）。
+- 关系的 `role` 只用于来源与参考关系，说明对方在制作中的角色，例如参考图、蒙版、四视图。
+
+**出处**
+
+出处是资产自己的一条信息，写在它的元数据文件里，可以改（ADR-070）。请求里写 `method`、`tool`、`prompt`、`params`、`batch`、`note`；内核补上 `by`、`at`，插件产出时再补上 `plugin`。
+
+- `method` 是开放值。内置值见 [`data-model.md`](data-model.md)；插件自定义的值以插件标识作前缀。
+- `params` 约定三个常用键 `model`、`seed`、`negativePrompt`，其余键自由。切图时把切图在效果图上的区域写进 `params.rect`，形如 `[x, y, w, h]`（ADR-036）。
+- 用了哪些资产，写成来源或参考关系，带上 `role`；内核记下对方当时的指纹。
+- 同一次产出的多个资产各写一份出处，带相同的 `batch`。
+- 改出处时没有再说 `batch`，保留原来的批次号；`method` 没变时保留原来的插件标识。
+
+**`POST /assets`**
+
+上传一个文件，或用 `path` 登记一个已经放进资产库的文件，同时说出它的信息。请求内容（上传时放在 multipart 的 `meta` 部分）：
 
 | 字段 | 说明 |
 |------|------|
@@ -274,23 +324,16 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | `stage` | 物料阶段；缺省取文件夹的默认值 |
 | `tags` | 标签 |
 | `description` | 描述 |
-| `relations` | 关系，每条含类型与对方 GUID，可带位置名 |
-| `record` | 生产记录，或已有记录的标识 |
+| `relations` | 关系，每条含类型与对方 GUID，可带位置名、角色、备注 |
+| `provenance` | 出处 |
 | `views` | 四视图的格子信息 |
 | `review` | 给 `exempt` 时免审 |
-| `onConflict` | 目标位置已有同名文件时的处理：`replace` 替换为新版本、`keep-both` 保留两者、`skip` 跳过；不带时返回 `conflict` |
+| `onConflict` | 上传时目标位置已有同名文件的处理：`replace` 替换为新版本、`keep-both` 保留两者、`skip` 跳过；不带时返回 `conflict` |
 
-- 用 `path` 登记一个已经有元数据文件的文件时，合并字段而不报冲突（ADR-051）。
+- 用 `path` 登记已有的文件时，与 `apply` 同一个比较，只写有差别的部分。
+- 上传时请求里什么信息都没有，上传的文件只被看见，不写元数据文件（ADR-074）。
 - 插件登记产出时交给内核的登记结构 `RegisterRequest` 与这里的字段相同，见 [`plugin-system.md`](plugin-system.md)。
-- 响应里包含新资产、是否跳过、生产记录的标识、被判定为新出现的标签，以及与这些新标签相近的已有标签。
-
-**生产记录**
-
-- `method` 是开放值。内置值见 [`data-model.md`](data-model.md)；插件自定义的值以插件标识作前缀。
-- `inputs` 的每一项可以带 `role`，说明这个输入的角色，例如参考图、蒙版、四视图。输入当时的内容指纹由内核记下。
-- `params` 约定三个常用键 `model`、`seed`、`negativePrompt`，其余键自由。切图时，切图工具或 Agent 把切图在效果图上的区域写进 `params.rect`（ADR-036）。
-- `plugin` 由内核填写，值为插件标识加版本；库外生成后登记的记录没有它，请求里不用带。
-- 记录里不列产出。同一次生产有多个产出时，先建一条生产记录，再让每个产出在登记时引用它。一条记录产出了哪些资产，由 `origin` 等于它的资产，加上来源关系的 `record` 指向它的资产反查（ADR-027）。
+- 响应里包含资产、是否跳过、被判定为新出现的标签，以及与这些新标签相近的已有标签。
 
 **四视图的格子信息**
 
@@ -312,13 +355,13 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 
 - 创建任务不绑定资产，与处理任务在同一个队列里，失败了不自动重试。
 - 产出由内核登记为资产，走的是与 `POST /assets` 相同的登记通道。一次运行可以登记零个、一个或多个产出。
-- 插件没带生产记录时，内核补一条，`method` 为 `<插件标识>/<创建方式标识>`。
+- 每个产出的元数据文件里各写一份出处，带这次运行的批次号（ADR-070）。插件没给出处时，内核写 `method` 为 `<插件标识>/<创建方式标识>`、`params` 为这次运行的参数。运行的输入成为每个产出的来源关系，带上输入的角色。
 - 任务可以带一个后续操作（按钮文字与插件页面），外壳据此把人带到插件页面，例如挑选候选（ADR-042）。
-- 执行者记发起的人或 Agent；是哪个插件做的，看生产记录的 `plugin`。
-- Agent 可以调用库内的创建插件，也可以照旧在库外生成后调用 `POST /assets` 登记，两种方式留下的记录结构相同。
+- 执行者记发起的人或 Agent；是哪个插件做的，看出处的 `plugin`。
+- Agent 可以调用库内的创建插件，也可以照旧在库外生成后调用 `POST /assets` 登记，两种方式留下的出处结构相同。
 - 第一期不带任何创建插件，`GET /creators` 返回空列表。
 
-插件动作作用于选中的资产：`GET /actions?ids=…` 列出适用的动作，`POST /actions/{id}/runs` 执行，结果是一个 `kind` 为 `action` 的任务，一次运行的产出共用一条生产记录（ADR-052）。
+插件动作作用于选中的资产：`GET /actions?ids=…` 列出适用的动作，`POST /actions/{id}/runs` 执行，结果是一个 `kind` 为 `action` 的任务，一次运行的产出共用一个批次号（ADR-052、ADR-070）。
 
 ### 追溯
 
@@ -327,13 +370,13 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 | 参数 | 取值 | 默认 |
 |------|------|------|
 | `direction` | `up` 上游、`down` 下游、`both` | `up` |
-| `types` | 关系类型列表 | `source` |
+| `types` | 关系类型列表 | `source`、`reference`（ADR-073） |
 | `depth` | 最大层数 | 5 |
 
 返回一张图：
 - 节点是资产摘要；
-- 边带关系类型、位置名 `slot`（有的话）、是否断链、是否上游已更新；
-- 来源边附带生产记录的摘要：方式、工具、提示词开头、执行者。
+- 边带关系类型、位置名 `slot` 与角色 `role`（有的话）、是否断链、是否上游已更新；
+- `provenance` 按资产 GUID 列出各个节点的出处。
 
 ### Agent 摘要
 
@@ -354,64 +397,89 @@ Bowerbird 对外只有一套 HTTP API。网页外壳、命令行、MCP 服务都
 - Agent 批量登记模型后，在有人打开页面之前拿不到这些模型的概览图。
 - 渲染过的概览图保存在资产库里，随资产库同步，不必重新渲染。
 
-设计对象的目标尺寸是建模、生成四视图等任务的依据：Agent 通过 `bb_get` 或沿归属关系追溯读到它。生成四视图时把目标尺寸与格子排布写进提示词，登记时带上 `views`；交给建模 Agent 的任务带上同一个尺寸。
+设计对象的目标尺寸是建模、生成四视图等任务的依据：Agent 通过 `get` 或沿归属关系追溯读到它。生成四视图时把目标尺寸与格子排布写进提示词，登记时带上 `views`；交给建模 Agent 的任务带上同一个尺寸。
 
-### MCP 工具
+### 命令行与 MCP 的能力表
 
-MCP 服务通过 `bb mcp` 启动，以标准输入输出通信，提供十个工具，没有资源与提示词。连接哪个服务看 `BOWERBIRD_URL` 或 `--server`；Agent 的名字看 `--name` 或 `BOWERBIRD_AGENT`，没有时记 `agent:unnamed`。
+每个能力只定义一次：名字、参数、说明、输出的文字（ADR-071）。定义在 `packages/mcp` 的 `capabilities.ts`。命令行的命令 `bb <能力名>` 与 MCP 的工具 `bb_<能力名>` 都从这张表生成，两处的参数与输出文字相同。输出文字只有中文（ADR-061）。HTTP 接口不从这张表生成：接口是内核的边界，命令行与 MCP 是它上面的两种说法（ADR-074）。
 
-| 工具 | 对应接口 | 参数 | 作用 |
-|------|----------|------|------|
-| `bb_search` | `POST /search` | `query`（文本语法）、`filter`（覆盖解析出的同名字段）、`sort`、`limit`（默认 20，最多 200）、`cursor` | 返回精简结果 |
-| `bb_get` | `GET /assets/{id}`、`/summary` | `id`（GUID 或路径）、`image` | 详情，可选带概览图 |
-| `bb_trace` | `GET /assets/{id}/lineage` | `id`、`direction`、`types`、`depth`（1 到 50，默认 5） | 向上或向下追溯 |
-| `bb_register` | `POST /records`、`POST /assets` | `files` 或 `path`、`folder`、`name`、`stage`、`tags`、`description`、`review`、`relations`、`record`、`views`、`onConflict` | 登记新资产，含关系、生产记录与四视图的格子信息 |
-| `bb_update` | `PATCH /assets/{id}`、关系接口、`POST /relations/retarget` | `id`、`tags`（增、删、设为）、`description`、`stage`、`relations`（增、删、换）、`retarget`（不带 `apply` 时只预览） | 修改标签、描述、阶段；新增、更换、删除关系 |
-| `bb_fetch` | `GET /assets/{id}/file`、`POST /export`、`POST /export/plan` | `id`、`withDeps`、`to`、`layout` | 取得文件路径或下载地址；给了 `to` 时导出到目录 |
-| `bb_creators` | `GET /creators` | 无 | 列出可用的创建方式及其参数与输入 |
-| `bb_create` | `POST /creators/{id}/runs`、`GET /jobs/{id}` | `creator`、`params`、`inputs`、`folder`；或 `job` 查询 | 发起一次创建，查询任务的进度与产出 |
-| `bb_vocabulary` | `GET /vocabulary` | 无 | 列出可用的标签、阶段、格式、关系类型 |
-| `bb_health` | `GET /issues` | `type`、`level`、`id` | 列出完整性问题 |
+| 能力 | 参数 | 作用 | MCP |
+|------|------|------|-----|
+| `search` | `query`（文本语法）、`filter`（结构化，盖过文本里的同名条件）、`sort`、`limit`（默认 50）、`cursor` | 搜索；每条结果带阶段、校验状态与问题标记 | 有 |
+| `get` | `ref`（GUID 或路径）、`image` | 详情：技术信息、出处、两个方向的关系、问题、Agent 摘要；`image` 附上概览图 | 有 |
+| `trace` | `ref`、`direction`、`types`（默认 `source,reference`）、`depth`（默认 5） | 沿关系追溯，每个资产带它的出处 | 有 |
+| `add` | `files`、`folder`、`name`、`stage`、`tags`、`description`、`review`、`source`、`reference`、`role`、`relations`、`method`、`tool`、`prompt`、`param`、`params`、`note`、`batch`、`views`、`onConflict` | 登记文件：资产库外的上传进来，资产库里的就地登记；可同时说出阶段、标签、描述、来源与参考、出处。同一次登记的多个文件、又给了出处时，自动共用一个批次号 | 有 |
+| `apply` | `file`（只有命令行）、`items`、`dryRun` | 按想要的结果写入一批资产的信息，见「写入信息」 | 有 |
+| `tag` | `refs`、`add`、`remove` | 加上或去掉标签 | 有 |
+| `retarget` | `from`、`to`、`types`、`apply` | 把指向一个资产的关系全部换成指向另一个资产；不带 `apply` 只预览 | 有 |
+| `export` | `refs`、`to`、`withDeps`、`flat` | 文件在哪：同一台电脑上给本地路径，否则给下载地址；给了 `to` 时导出到目录 | 有 |
+| `health` | `type`、`level`、`ref` | 列出完整性问题 | 有 |
+| `resolve` | `ids` 或 `type`、`action`、`params` | 对问题执行一种处理：逐条，或对一类问题全部 | 无 |
+| `changes` | `by`（默认当前的执行者）、`since`、`folder` | 某个执行者最后修改过信息的资产，以及要提交的文件：资产文件与它的元数据文件（ADR-072） | 有 |
+| `rescan` | `path` | 扫描资产库或其中一个文件夹 | 有 |
+| `rm` | `refs`、`force` | 移入回收站；被引用时需要 `force` | 无 |
+| `untrack` | `refs` | 移出资产库、不动文件（ADR-067） | 无 |
+| `create` | `creator`、`param`、`params`、`input`（`角色=资产`）、`folder`；或 `job` | 不给创建方式时列出可用的；给出时发起一次运行；给出 `job` 时查看那次运行 | 有 |
+| `action` | `action`、`refs`、`param`、`params` | 不给动作时列出选中资产能用的；给出时发起一次运行 | 有 |
+| `vocabulary` | 无 | 阶段、校验状态、格式、关系类型、带用量的标签、生产方式、设计对象 | 有 |
 
-**工具设计约定**
+**约定**
 
-- 每个工具的返回都以紧凑文本为主，字段固定，不返回可重算的冗长信息。
-- `bb_search` 的每条结果都带阶段、校验状态与问题标记。
-- `bb_get`：
-  - 返回概览图时用 MCP 的图片内容类型，具备视觉能力的 Agent 可以直接查看；
-  - 概览图还没有渲染时只返回文字部分，并用一句话说明原因。
+- 资产都可以用 GUID 或路径指明。路径可以是资产库内的相对路径，也可以是这台电脑上资产库里的文件路径。关系的对方也可以写路径。
+- MCP 不提供删除与移出（ADR-009）：`resolve`、`rm`、`untrack` 不进 MCP。插件登记的创建方式与动作经 `create`、`action` 出现在两处，内核不为某个插件单独补命令。
+- 每个能力的输出以紧凑文本为主，字段固定，不返回可重算的冗长信息。`--json` 输出接口的回答。
 - 按 GUID 或路径取单个资产时，不受 Agent 搜索范围的限制。
-- `bb_update` 可以把指向一个资产的关系全部换成指向另一个资产（`POST /relations/retarget`），先预览后执行。这个批量更换只给 Agent 用。
-- `bb_fetch`：
-  - Agent 与服务位于同一台机器时，返回文件的本地路径，否则返回下载地址；
-  - 导出时，同一台机器上由服务直接写到目录；不在同一台机器上时，先取导出计划，再逐个下载写到 Agent 所在机器的目录（ADR-050）；
-  - 连同依赖导出模型时，贴图等按 `slot` 的名字写出，模型离开 Bowerbird 后仍能按文件里写的名字找到它们。
-- `bb_register` 与 `bb_update` 由多步组成，中途失败时回报三段：失败前已完成的步骤、失败的那一步与错误、还有几步没执行。其他工具失败时返回 `error <错误码>: <说明>`。
-- MCP 服务不提供删除工具。删除需要通过界面或命令行完成。
+- `get` 的概览图用 MCP 的图片内容类型返回，只有 MCP 能显示；还没有渲染时只返回文字部分，并用一句话说明原因。
+- `export`：导出时，同一台电脑上由服务直接写到目录；不在同一台电脑上时，先取导出计划，再逐个下载写到本机目录（ADR-050）。连同依赖导出模型时，贴图等按 `slot` 的名字写出。
+- `retarget` 这个批量更换只给命令行与 Agent，界面上不出现。
+- `changes`：按最后修改者与修改时间查。`by` 只写 `agent` 时匹配所有 Agent；`since` 是 ISO 时间或 `when:` 的取值。没有元数据文件的资产不在其中。
+- 失败时的文字为 `错误：<错误码>: <说明>`；MCP 同时标为出错。
+
+**命令行的写法**
+
+- 命令名就是能力名。参数写成 kebab-case（`onConflict` 写作 `--on-conflict`），个别改了名字更好读：`tags` 写作 `--tag`，`action` 的 `refs` 写作 `--on`。
+- 可重复的参数可以写多次，也可以用逗号分隔。
+- JSON 参数可以直接写，也可以写 `@文件` 从文件读。
+- `apply` 的清单文件是 JSONL，每行一项；也接受一个 JSON 数组；`-` 表示标准输入。
+- `param` 写成 `名=值`，值读得出 JSON 时按 JSON 取。
+
+**MCP**
+
+- MCP 服务通过 `bb mcp` 启动，以标准输入输出通信，提供表里标为「有」的十四个工具，没有资源与提示词。
+- Agent 的名字看 `--name` 或 `BOWERBIRD_AGENT`，没有时记 `agent:unnamed`。
+- 每一次调用都像一条命令一样连接资产库，见下一节。
+
+### 命令怎么连到资产库
+
+服务是用来看和加速的，不是读写资产库的前提（ADR-069）。命令与 MCP 的每一次调用按顺序找服务（ADR-074）：
+
+1. `--server` 或 `BOWERBIRD_URL` 给出的服务：照用。
+2. `bb serve` 写在 `<BOWERBIRD_HOME>/server.json` 里、进程还在且能应答的服务。
+3. 默认地址 `127.0.0.1:7420` 上能应答的服务。
+
+- 后两种找到的服务，只在它打开了这条命令要用的资产库时才用；否则命令自己打开资产库，绝不写进那个服务打开的另一个资产库。
+- 要用哪个资产库：`--library`（标识或名称）；否则工作目录所在的资产库文件夹，没登记过就登记；否则这台电脑的默认资产库。
+- 命令自己打开资产库时：
+  - 先等启动扫描完成，因为这段时间没人盯着文件夹；
+  - 处理管线不运行，格式识别、缩略图、概览图都留给下次服务；
+  - 在本进程的 `127.0.0.1` 随机端口起一个只供这条命令用的服务，做完就关。
+- 同一个资产库同一时刻只有一个进程在写。锁是本机数据目录里的 `libraries/<库>/writer.lock`，里面记进程号。进程还在、又不是自己时拒绝打开，报 `conflict`；进程不在了就接管。
+- 大资产库上，服务没开时每条命令要多等一次对账。这种库建议开着服务用。
 
 ### 命令行
 
 命令行工具名为 `bb`（也可以叫 `bowerbird`）。
 - 全局选项：`--json`、`--server <地址>`、`--library <标识>`、`--version`，写在子命令前后都可以。
 - 成功退出码为 0，出错为 1；`--json` 下的错误输出 `{ "error": { code, message, details? } }`。
+- 能力表里的命令之外，还有四条本地命令，它们不走接口：
 
 | 命令 | 作用 |
 |------|------|
-| `bb init <目录> [--name]` | 把一个文件夹初始化为资产库；目录不存在时创建 |
-| `bb serve [目录] [--host] [--port] [--name]` | 启动服务；给出的目录登记为资产库，并作为这次打开的库；目录不存在时创建 |
-| `bb search [查询…] [--limit] [--sort] [--cursor]` | 搜索，支持文本语法 |
-| `bb get <GUID 或路径>` | 详情与摘要 |
-| `bb trace <GUID 或路径> [--direction] [--types] [--depth]` | 追溯 |
-| `bb add <文件…>` | 登记资产，可带 `--folder`、`--stage`、`--tag`、`--description`、`--source`、`--prompt`、`--method`、`--tool`、`--on-conflict`；已在资产库里的文件就地登记 |
-| `bb tag <GUID 或路径…> --add/--remove` | 增删标签 |
-| `bb export <GUID 或路径…> --to <目录> [--with-deps] [--flat]` | 导出 |
-| `bb health [--type] [--level]` | 列出完整性问题 |
-| `bb rescan [目录]` | 触发扫描 |
-| `bb rm <GUID 或路径…> [--force]` | 移入回收站 |
-| `bb plugin list / add <包名或路径> / update [标识] / remove <标识>` | 插件管理 |
+| `bb init <目录> [--name]` | 把一个文件夹初始化为资产库；目录不存在时创建；只写 `.bowerbird/`，不在文件旁边写东西 |
+| `bb serve [目录] [--host] [--port] [--name]` | 启动服务；给出的目录登记为资产库，并作为这次打开的库；目录不存在时创建；运行时写 `server.json`，让这台电脑上的命令找到它 |
+| `bb plugin list / add <包名或路径> / update [标识] / remove <标识>` | 插件管理；正在运行的服务重启后生效 |
 | `bb mcp [--name]` | 启动 MCP 服务 |
 
-- 除 `init`、`serve`、`plugin`、`mcp` 外，其余命令都通过 HTTP API 与正在运行的服务通信。
 - `--host`、`--port` 只作用于这次运行，不写入本机配置；`/config` 读写的始终是保存的配置，所以以 `--host` 启动后在网页上改监听地址，保存的是新值，并提示重启后生效。
 - `bb serve` 只托管构建好的外壳，找不到时只提供接口（ADR-050）。
 
@@ -420,23 +488,22 @@ MCP 服务通过 `bb mcp` 启动，以标准输入输出通信，提供十个工
 
   ```jsonc
   {
-    "registered": [{ "file": "a.png", "result": { "asset": { … }, "skipped": false, "recordId": "…", "newTags": [] } }],
+    "registered": [{ "file": "a.png", "result": { "asset": { … }, "skipped": false, "newTags": [] } }],
     "failed": { "file": "b.png", "error": { "code": "conflict", "message": "…" }, "notRun": ["c.png"] },
-    "recordId": "…"   // 多个文件共用一条新建的生产记录时
+    "batch": "bat_…"   // 多个文件共用的批次号，给了出处时才有
   }
   ```
 
   全部成功时 `failed` 为 `null`。
-- `bb rm` 逐个处理并收集失败：`{ trashed: [...], failed: [{ ref, code, message }] }`，有失败时退出码 1。
-
-**远程导出**：`bb export` 与服务在同一台电脑上时，由服务直接写到目录；否则先取导出计划，再逐个下载写到本机目录。
+- `bb apply`、`bb tag` 逐项回答，有一项失败时退出码 1。
+- `bb rm` 与 `bb untrack` 逐个处理并收集失败，例如 `{ trashed: [...], failed: [{ ref, code, message }] }`，有失败时退出码 1。
 
 **环境变量**
 
 | 变量 | 作用 | 默认 |
 |------|------|------|
-| `BOWERBIRD_URL` | 命令行与 `bb mcp` 连接的服务；`--server` 优先 | `http://127.0.0.1:7420` |
-| `BOWERBIRD_ACTOR` | 命令行写操作的执行者，必须带 `user:` 或 `agent:` 前缀 | 不带，记 `user:unnamed` |
+| `BOWERBIRD_URL` | 命令行与 `bb mcp` 要用的服务；`--server` 优先 | 不设：按上一节找服务，找不到就自己打开资产库 |
+| `BOWERBIRD_ACTOR` | 命令行写操作的执行者；不带 `user:` 或 `agent:` 前缀时当作 `user:<名称>` | 不带，记 `user:unnamed` |
 | `BOWERBIRD_AGENT` | `bb mcp` 的 Agent 名字，不带前缀；`--name` 优先 | 记 `agent:unnamed` |
 | `BOWERBIRD_HOME` | 本机数据目录 | `~/.bowerbird` |
 | `BOWERBIRD_LOG_LEVEL` | 日志最低级别 | `info` |
@@ -446,7 +513,7 @@ MCP 服务通过 `bb mcp` 启动，以标准输入输出通信，提供十个工
 为避免同义标签泛滥：
 
 - 登记或修改资产时，响应里列出本次新出现的标签，并为每个新标签给出相近的已有标签。
-- `bb_vocabulary` 让 Agent 在打标签前先了解现有词表与各标签的用量。
+- `vocabulary` 让 Agent 在打标签前先了解现有词表与各标签的用量。
 - 界面的标签管理提供改名与合并，合并会更新所有相关资产的元数据文件。
 
 ### 安全
@@ -494,7 +561,7 @@ MCP 服务通过 `bb mcp` 启动，以标准输入输出通信，提供十个工
 ## 相关
 
 - 查询模型：[`search.md`](search.md)。
-- 关系与生产记录的语义：[`data-model.md`](data-model.md)。
+- 关系与出处的语义：[`data-model.md`](data-model.md)。
 - 复制与删除的行为：[`sync-and-integrity.md`](sync-and-integrity.md)。
 - 创建方式、动作、访问控制与插件自己的接口：[`plugin-system.md`](plugin-system.md)。
-- 决策：ADR-009、ADR-011、ADR-016、ADR-018、ADR-019、ADR-020、ADR-023、ADR-024、ADR-025、ADR-026、ADR-027、ADR-029、ADR-036、ADR-038、ADR-042、ADR-043、ADR-047、ADR-048、ADR-049、ADR-050、ADR-052。
+- 决策：ADR-009、ADR-011、ADR-016、ADR-018、ADR-019、ADR-020、ADR-023、ADR-024、ADR-025、ADR-026、ADR-029、ADR-036、ADR-038、ADR-042、ADR-043、ADR-047、ADR-048、ADR-049、ADR-050、ADR-052、ADR-061、ADR-067、ADR-068、ADR-069、ADR-070、ADR-071、ADR-072、ADR-073、ADR-074。

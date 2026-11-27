@@ -104,7 +104,7 @@ describe('first-run page', () => {
     const open = screen.getByRole('button', { name: '打开文件夹' })
     const create = screen.getByRole('button', { name: '新建资产库' })
     expect(open.getAttribute('aria-describedby') && document.getElementById(open.getAttribute('aria-describedby')!)!.textContent)
-      .toBe('把一个已有的文件夹作为资产库。里面的文件会被登记：每个文件旁边写一个 .bmeta，原文件不改动。')
+      .toBe('把一个已有的文件夹作为资产库。只读取里面的文件，不改动它们；给文件记下标签、关系或出处后，它旁边才会多一个 .bmeta。')
     expect(document.getElementById(create.getAttribute('aria-describedby')!)!.textContent).toBe('新建一个空文件夹作为资产库。')
     expect(open.className).toBe(create.className)
     fireEvent.click(create)

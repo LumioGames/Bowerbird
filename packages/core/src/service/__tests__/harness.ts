@@ -105,6 +105,7 @@ export function fakeQuery(o: QueryEngineOptions): QueryEngine & { removed: strin
     if (f.ids) rows = rows.filter(r => f.ids!.includes(r.id))
     if (f.folder) rows = rows.filter(r => r.path === f.folder || r.path.startsWith(f.folder!.replace(/\/$/, '') + '/'))
     if (f.review) rows = rows.filter(r => f.review!.includes(r.review as never))
+    if (f.batch) rows = rows.filter(r => r.batch === f.batch)
     return rows.map(r => r.id)
   }
   return {
@@ -228,6 +229,11 @@ export interface TestLib {
   rowByPath(p: string): AssetRow | undefined
   idOf(p: string): string
   issues(type?: string): Array<{ id: string; type: string; asset_id: string | null; rel_to: string | null; details_json: string }>
+  /**
+   * Give these files some information (a custom field) so they get their .bmeta — a scan alone only lets the library
+   * see a file (ADR-067). Returns their ids.
+   */
+  keep(...paths: string[]): Promise<Guid[]>
   reopen(opts?: { dropIndex?: boolean; now?: () => number }): Promise<void>
   close(): Promise<void>
 }
@@ -327,6 +333,12 @@ export async function makeLib(o: MakeLibOptions = {}): Promise<TestLib> {
     rowByPath: p => svc.store.rowByPath(p),
     idOf(p) { const r = svc.store.rowByPath(p); if (!r) throw new Error(`no asset at ${p}`); return r.id },
     issues: type => svc.store.allIssues().filter(i => !type || i.type === type),
+    async keep(...paths) {
+      const r = await svc.apply({ items: paths.map(p => ({ path: p, fields: { 'test.keep': { kept: true } } })) }, ctx)
+      const bad = r.results.find(x => x.error)
+      if (bad) throw new Error(`keep ${paths[bad.index]}: ${bad.error!.message}`)
+      return r.results.map(x => x.id!)
+    },
     async reopen(ro = {}) {
       await hub.close()
       if (ro.dropIndex) fs.rmSync(path.join(home, 'libraries', id), { recursive: true, force: true })

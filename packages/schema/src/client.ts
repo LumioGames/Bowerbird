@@ -145,7 +145,11 @@ export function createApiClient(opts: ClientOptions = {}) {
         if (file) { const b = toBlob(file); form.append('file', b.blob, b.name ?? fields.name ?? 'file') }
         return json<Out<typeof A.RegisterResponse>>('POST', `${L(lib)}/assets`, { form, signal })
       },
+      /** Say what assets should have; only differences are written (ADR-068). */
+      apply: (lib: string, body: In<typeof A.ApplyRequest>) => json<Out<typeof A.ApplyResponse>>('POST', `${L(lib)}/assets/apply`, { body }),
       patch: (lib: string, id: string, body: In<typeof A.AssetPatch>) => json<Out<typeof A.AssetPatchResponse>>('PATCH', `${L(lib)}/assets/${enc(id)}`, { body }),
+      /** 移出资产库：its .bmeta to the trash, the file stays (ADR-067). */
+      untrack: (lib: string, id: string) => json<Out<typeof A.UntrackResponse>>('POST', `${L(lib)}/assets/${enc(id)}/untrack`, { body: {} }),
       remove: (lib: string, id: string, force = false) => json<Out<typeof A.DeleteResponse>>('DELETE', `${L(lib)}/assets/${enc(id)}`, { query: { force: force || undefined } }),
       replaceContent: (lib: string, id: string, file: FileLike, note?: string) => {
         const form = new FormData()
@@ -183,12 +187,6 @@ export function createApiClient(opts: ClientOptions = {}) {
       replace: (lib: string, id: string, body: In<typeof A.RelationReplaceRequest>) => json<AssetDetail>('POST', `${L(lib)}/assets/${enc(id)}/relations/replace`, { body }),
       acknowledge: (lib: string, id: string, to: string) => json<AssetDetail>('POST', `${L(lib)}/assets/${enc(id)}/relations/acknowledge`, { body: { to } }),
       retarget: (lib: string, body: In<typeof A.RetargetRequest>) => json<Out<typeof A.RetargetResponse>>('POST', `${L(lib)}/relations/retarget`, { body })
-    },
-
-    records: {
-      create: (lib: string, body: In<typeof A.RecordInput>) => json<Out<typeof A.RecordCreateResponse>>('POST', `${L(lib)}/records`, { body }),
-      get: (lib: string, id: string) => json<Out<typeof A.RecordResponse>>('GET', `${L(lib)}/records/${enc(id)}`),
-      addNote: (lib: string, id: string, text: string) => json<Out<typeof A.RecordResponse>>('POST', `${L(lib)}/records/${enc(id)}/notes`, { body: { text } })
     },
 
     folders: {

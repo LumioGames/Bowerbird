@@ -57,7 +57,7 @@
 | [ADR-024](ADR-024-no-change-history-in-kernel.md) | 内核不记改动历史；历史以后由插件提供，内核留出改动通知的扩展点 | Accepted |
 | [ADR-025](ADR-025-lazy-thumbnails-no-headless-render.md) | 需要渲染的缩略图懒加载，服务器不渲染；缩略图随资产库同步 | Accepted |
 | [ADR-026](ADR-026-multiple-libraries.md) | 一个资产库是一个根文件夹，可以有多个并切换；接口地址带上是哪个库 | Accepted |
-| [ADR-027](ADR-027-asset-origin-record.md) | 资产记下产出它的生产记录（origin） | 提议 |
+| [ADR-027](ADR-027-asset-origin-record.md) | 资产记下产出它的生产记录（origin） | Superseded（被 ADR-070 取代） |
 | [ADR-028](ADR-028-plugin-data-dir.md) | 插件上下文提供本机的插件数据目录与临时目录；关键词搜索的全文索引放在插件自己的数据库里 | 提议 |
 | [ADR-029](ADR-029-api-endpoints-added.md) | 实现时补的接口端点 | 提议 |
 | [ADR-030](ADR-030-plugin-web-shared-runtime.md) | 插件网页模块共用外壳的 React 与插件开发包实例，样式随模块注入 | 提议 |
@@ -97,3 +97,11 @@
 | [ADR-064](ADR-064-onboarding-points-at-buttons.md) | 新手引导分散到各处讲，用小手指指着具体的按钮；新类型文件能做什么由格式插件说 | Accepted |
 | [ADR-065](ADR-065-pipeline-yields-to-full-scan.md) | 全库扫描时管线让路；没变的元数据文件对账时不再读 | 提议 |
 | [ADR-066](ADR-066-file-change-target-includes-stability-wait.md) | 文件改动的通知目标改为 3 秒内，保留 2 秒的稳定性等待 | Accepted |
+| [ADR-067](ADR-067-bmeta-only-for-what-cannot-be-recomputed.md) | 元数据文件只在有了算不出来的信息时才写 | Accepted |
+| [ADR-068](ADR-068-writes-state-the-wanted-result.md) | 写入信息时说出想要的结果，内核只写有差别的部分 | Accepted |
+| [ADR-069](ADR-069-commands-work-without-the-server.md) | 服务没开时，命令自己打开资产库读写 | Accepted |
+| [ADR-070](ADR-070-provenance-lives-in-bmeta.md) | 出处写在资产自己的元数据文件里，可以改；取消单独的生产记录文件 | Accepted |
+| [ADR-071](ADR-071-one-definition-for-cli-and-mcp.md) | 每个能力只定义一次，命令行与 MCP 都从这份定义生成 | Accepted |
+| [ADR-072](ADR-072-no-undo-list-by-last-modifier.md) | 内核不做撤销；「我这次改了什么」按最后修改者与时间查 | Accepted |
+| [ADR-073](ADR-073-builtin-reference-relation.md) | 内置关系增加「参考」，对方变了不提醒 | Accepted |
+| [ADR-074](ADR-074-implementation-details-067-073.md) | ADR-067 至 ADR-073 的实现细则 | 提议 |

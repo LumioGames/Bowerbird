@@ -1,6 +1,6 @@
 /**
  * 创建插件（ADR-016, pages.md「创建插件」, Forge 示意 → fixtures/plugins/forge）: 新建菜单、参数表单、任务进度与取消、
- * 挑选 → 登记 → 生产记录带插件与输入角色、右键「生成模型…」、详情页签、顶栏额度、左栏分区、插件设置页、两种故障；
+ * 挑选 → 登记 → 出处带插件、输入是带角色的来源关系、右键「生成模型…」、详情页签、顶栏额度、左栏分区、插件设置页、两种故障；
  * 右键菜单里插件动作的插槽（「生成变体（Forge）」）.
  * Build the fixture plugin first: pnpm --filter @bowerbird-fixtures/plugin-forge build
  */
@@ -53,7 +53,7 @@ test.describe('Forge（创建插件）', () => {
     await chooser
   })
 
-  test('AI 生图：参数表单（输入按角色、参数、放到、Forge 提供）→ 进度 → 挑选两个 → 登记的资产带生产记录（插件、输入与角色）', async ({ page }) => {
+  test('AI 生图：参数表单（输入按角色、参数、放到、Forge 提供）→ 进度 → 挑选两个 → 登记的资产带出处（插件）、来源关系带角色', async ({ page }) => {
     bb = await start(40)
     await openBrowse(page, bb, 'folder=props%2Fchest')
     await (await newMenu(page)).getByRole('menuitem', { name: 'AI 生图…' }).click()
@@ -87,13 +87,17 @@ test.describe('Forge（创建插件）', () => {
     expect(items).toHaveLength(2)
     const concept = await assetByPath(bb, 'props/chest/chest_concept.png')
     const made = await bb.api.assets.get(bb.lib, items[0]!.id)
-    expect(made.record).toMatchObject({ method: 'community.forge/image', plugin: 'community.forge@0.4.0', prompt: '木质宝箱，暖色' })
-    expect(made.record!.inputs).toEqual([expect.objectContaining({ id: concept.id, role: '参考图' })])
+    expect(made.provenance).toMatchObject({ method: 'community.forge/image', plugin: 'community.forge@0.4.0', prompt: '木质宝箱，暖色' })
+    // the run's inputs are the outputs' source relations, with their roles (ADR-070); the two picked share a batch
+    expect(made.relations.outgoing.filter(r => r.type === 'source')).toEqual([expect.objectContaining({ to: concept.id, role: '参考图' })])
+    const other = await bb.api.assets.get(bb.lib, items[1]!.id)
+    expect(other.provenance?.batch).toBeTruthy()
+    expect(other.provenance?.batch).toBe(made.provenance?.batch)
 
     await page.goto(libUrl(bb, '?folder=props%2Fchest'))
     await cell(page, items[0]!.name).click()
     const rec2 = inspector(page)
-    await expect(rec2.getByRole('button', { name: /^生产记录/ })).toBeVisible()
+    await expect(rec2.getByRole('button', { name: /^出处/ })).toBeVisible()
     await expect(rec2).toContainText('community.forge')
     await expect(rec2).toContainText('参考图')
     await expect(rec2).toContainText('chest_concept.png')
@@ -122,8 +126,8 @@ test.describe('Forge（创建插件）', () => {
     const turnaround = await assetByPath(bb, 'props/chest/chest_turnaround.png')
     const det = await bb.api.assets.get(bb.lib, made.id)
     expect(det.relations.outgoing.find(r => r.type === 'source' && r.to === turnaround.id)).toBeTruthy()
-    expect(det.record).toMatchObject({ method: 'community.forge/model', plugin: 'community.forge@0.4.0' })
-    expect(det.record!.inputs).toEqual(expect.arrayContaining([expect.objectContaining({ id: turnaround.id, role: '四视图' })]))
+    expect(det.provenance).toMatchObject({ method: 'community.forge/model', plugin: 'community.forge@0.4.0' })
+    expect(det.relations.outgoing).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'source', to: turnaround.id, role: '四视图' })]))
   })
 
   test('只有带格子的图才出现「生成模型…」（没有格子的图片不出现）', async ({ page }) => {
@@ -250,7 +254,7 @@ test.describe('Forge（创建插件）', () => {
     const v = await waitAsset(bb, 'props/chest/chest_basecolor_variant.png', 30_000)
     const det = await bb.api.assets.get(bb.lib, v.id)
     expect(det.relations.outgoing.find(r => r.type === 'source' && r.to === base.id)).toBeTruthy()
-    expect(det.record).toMatchObject({ method: 'community.forge/variant', params: { hue: 90 } })
-    expect(det.record!.inputs).toEqual([expect.objectContaining({ id: base.id, role: '原图' })])
+    expect(det.provenance).toMatchObject({ method: 'community.forge/variant', params: { hue: 90 } })
+    expect(det.relations.outgoing.find(r => r.type === 'source' && r.to === base.id)?.role).toBe('原图')
   })
 })

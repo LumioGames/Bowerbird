@@ -26,8 +26,8 @@ export function detail(over: Partial<AssetDetail> = {}): AssetDetail {
   return {
     ...summary(),
     hash: 'sha256:00', descriptionFull: null, auto: null, fields: {}, reviewVerdict: null, versions: [], views: null,
-    thumbnailManual: false, origin: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
-    relations: { outgoing: [], incoming: [] }, issues: [], record: null, bundleFiles: null, targetSize: null, stages: [],
+    thumbnailManual: false, provenance: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
+    relations: { outgoing: [], incoming: [] }, issues: [], bundleFiles: null, targetSize: null, stages: [],
     ...over
   }
 }
@@ -101,7 +101,9 @@ export function createFakeHub(opts: FakeOptions = {}): FakeHub {
     search: async () => ({ items: [summary()], total: 1, cursor: null }),
     get: async (id: string) => { if (id !== ID1 && id !== ID2) throw new CoreError('not_found', '资产不存在'); return detail({ id }) },
     precheck: async () => ({ conflicts: [] }),
-    register: async () => ({ asset: detail(), skipped: false, recordId: null, newTags: [] }),
+    register: async () => ({ asset: detail(), skipped: false, newTags: [] }),
+    apply: async (req: { items: Array<{ id?: string; path?: string }>; dryRun?: boolean }) => ({ results: req.items.map((it, index) => ({ index, id: it.id ?? null, path: it.path ?? null, changed: false, changes: [] })), dryRun: !!req.dryRun, newTags: [] }),
+    untrack: async () => ({ trashId: 't1', referrers: [] }),
     patch: async (id: string) => ({ asset: detail({ id }), newTags: [] }),
     trash: async () => ({ trashId: 'trash_1', referrers: [] }),
     replaceContent: async (id: string) => detail({ id }),
@@ -119,7 +121,7 @@ export function createFakeHub(opts: FakeOptions = {}): FakeHub {
     setManualThumbnail: async (id: string) => detail({ id, thumbnailManual: true }),
     clearManualThumbnail: async (id: string) => detail({ id }),
     summary: async () => ({ text: '图片 1024×1024', image: null, imageMissingReason: '概览图还没有渲染，有人打开页面后才会生成' }),
-    lineage: async (id: string) => ({ center: id, nodes: [summary({ id })], missing: [], edges: [], records: {} }),
+    lineage: async (id: string) => ({ center: id, nodes: [summary({ id })], missing: [], edges: [], provenance: {} }),
     versions: async () => ({ versions: [], store: null }),
     versionFile: async () => { throw new CoreError('unsupported', '需要版本插件才能读取旧版本') },
     restoreVersion: async () => { throw new CoreError('unsupported', '需要版本插件') },
@@ -129,9 +131,6 @@ export function createFakeHub(opts: FakeOptions = {}): FakeHub {
     replaceRelation: async (id: string) => detail({ id }),
     acknowledgeUpstream: async (id: string) => detail({ id }),
     retarget: async (req: { dryRun: boolean }) => ({ affected: [], applied: !req.dryRun }),
-    createRecord: async (input: { method: string }, ctx: CallContext) => ({ id: 'rec_1', method: input.method, by: ctx.actor, at: '2026-11-25T00:00:00.000Z' }),
-    record: async (id: string) => { if (id !== 'rec_1') throw new CoreError('not_found', '没有这条生产记录'); return { record: { id, method: 'manual', by: 'user:unnamed', at: '2026-11-25T00:00:00.000Z' }, outputs: [] } },
-    addRecordNote: async (id: string) => ({ record: { id, method: 'manual', by: 'user:unnamed', at: '2026-11-25T00:00:00.000Z' }, outputs: [] }),
     folders: async () => ({ path: '', name: '星落', count: 1, modified: null, effectiveDefaults: { from: {} }, children: [] }),
     createFolder: async () => undefined,
     patchFolder: async () => undefined,

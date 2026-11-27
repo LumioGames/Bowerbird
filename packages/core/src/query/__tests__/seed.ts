@@ -28,7 +28,11 @@ export interface SeedAsset {
   description?: string | null
   autoDescription?: string | null
   method?: string | null
-  origin?: string | null
+  batch?: string | null
+  /** Last actor who changed its information; default: the creator (null with `sidecar: false`). */
+  modifiedBy?: string | null
+  /** Has a .bmeta (default true). */
+  sidecar?: boolean
   thumbState?: string
   thumbKey?: string | null
   aspect?: number | null
@@ -51,16 +55,17 @@ export function seedAsset(db: IndexDb, a: SeedAsset): string {
   const { base, ext } = splitName(name)
   const created = a.created ?? '2026-11-01T00:00:00.000Z'
   db.prepare(`INSERT INTO assets (id, path, folder, name, stem, ext, format, plugin, hash, size, stage, review, bundle, auxiliary, missing,
-      created_at, created_by, modified_at, description, auto_description, origin, method, thumb_state, thumb_key, aspect, badge,
+      created_at, created_by, modified_at, modified_by, sidecar, description, auto_description, method, batch, thumb_state, thumb_key, aspect, badge,
       cell_title, cell_excerpt, flags, issue_level, issue_count, member_count, missing_plugin, meta_json)
     VALUES (@id, @path, @folder, @name, @stem, @ext, @format, @plugin, @hash, @size, @stage, @review, @bundle, @auxiliary, @missing,
-      @created, @createdBy, @modified, @description, @autoDescription, @origin, @method, @thumbState, @thumbKey, @aspect, @badge,
+      @created, @createdBy, @modified, @modifiedBy, @sidecar, @description, @autoDescription, @method, @batch, @thumbState, @thumbKey, @aspect, @badge,
       @cellTitle, @cellExcerpt, @flags, @issueLevel, @issueCount, @memberCount, @missingPlugin, @meta)`).run({
     id, path: a.path, folder: dirOf(a.path), name, stem: a.bundle ? name : base, ext: a.bundle ? '' : ext.toLowerCase(),
     format: a.format ?? 'unknown', plugin: a.plugin ?? null, hash: a.hash ?? `sha256:${id.replace(/-/g, '')}`, size: a.size ?? 100,
     stage: a.stage ?? 'production', review: a.review ?? 'pending', bundle: a.bundle ? 1 : 0, auxiliary: a.auxiliary ? 1 : 0,
     missing: a.missing ? 1 : 0, created, createdBy: a.createdBy ?? 'user:lin', modified: a.modified ?? created,
-    description: a.description ?? null, autoDescription: a.autoDescription ?? null, origin: a.origin ?? null, method: a.method ?? null,
+    modifiedBy: a.modifiedBy !== undefined ? a.modifiedBy : a.sidecar === false ? null : (a.createdBy ?? 'user:lin'), sidecar: a.sidecar === false ? 0 : 1,
+    description: a.description ?? null, autoDescription: a.autoDescription ?? null, method: a.method ?? null, batch: a.batch ?? null,
     thumbState: a.thumbState ?? 'pending', thumbKey: a.thumbKey ?? null, aspect: a.aspect ?? null, badge: a.badge ?? null,
     cellTitle: a.cellTitle ?? null, cellExcerpt: a.cellExcerpt ?? null, flags: a.flags ?? 0, issueLevel: a.issueLevel ?? 0,
     issueCount: a.issueCount ?? 0, memberCount: a.memberCount ?? 0, missingPlugin: a.missingPlugin ? JSON.stringify(a.missingPlugin) : null,
@@ -81,17 +86,14 @@ export function seedAsset(db: IndexDb, a: SeedAsset): string {
   return id
 }
 
-export function seedRelation(db: IndexDb, from: string, type: string, to: string, extra: { slot?: string; record?: string } = {}): void {
-  db.prepare('INSERT INTO relations (from_id, type, to_id, slot, record) VALUES (?, ?, ?, ?, ?)').run(from, type, to, extra.slot ?? '', extra.record ?? null)
+export function seedRelation(db: IndexDb, from: string, type: string, to: string, extra: { slot?: string; role?: string } = {}): void {
+  db.prepare('INSERT INTO relations (from_id, type, to_id, slot, role) VALUES (?, ?, ?, ?, ?)').run(from, type, to, extra.slot ?? '', extra.role ?? null)
 }
 
 export function seedIssue(db: IndexDb, assetId: string, type: string, level: string): void {
   db.prepare("INSERT INTO issues (id, type, level, asset_id, found_at) VALUES (?, ?, ?, ?, '2026-11-01T00:00:00Z')").run(`${type}:${assetId}`, type, level, assetId)
 }
 
-export function seedRecord(db: IndexDb, id: string, method: string): void {
-  db.prepare("INSERT INTO records (id, method, by, at, json) VALUES (?, ?, 'user:lin', '2026-11-01T00:00:00Z', '{}')").run(id, method)
-}
 
 export function seedTrash(db: IndexDb, t: { assetId: string; name: string; originalPath: string; deletedAt?: string; stage?: string; tags?: string[]; format?: string }): void {
   const meta = { bb: 1, id: t.assetId, hash: 'sha256:01', stage: t.stage ?? 'production', tags: t.tags ?? [], created: { at: '2026-10-01T00:00:00Z', by: 'user:lin' } }

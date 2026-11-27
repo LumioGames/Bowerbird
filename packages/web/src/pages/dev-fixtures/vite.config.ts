@@ -1,6 +1,6 @@
 /**
  * DEV ONLY (line web-2): `npx vite --config packages/web/src/pages/dev-fixtures/vite.config.ts` serves the shell with a
- * read-mostly fake API built from the sample library fixtures/xingluo (.bmeta files, records, trash, tags), so the
+ * read-mostly fake API built from the sample library fixtures/xingluo (.bmeta files with their provenance, trash, tags), so the
  * detail page, graph, compare and the full pages can be looked at before the real server is merged. The shared
  * components that are still placeholders are swapped for the test stand-ins. Never imported by the app build.
  */
@@ -27,9 +27,24 @@ function walk(dir: string, out: string[] = []): string[] {
 
 function load() {
   const metas = walk(LIB_DIR).map(p => ({ rel: path.relative(LIB_DIR, p).slice(0, -6), m: JSON.parse(fs.readFileSync(p, 'utf8')) as Json }))
+  /* a sample library written before ADR-070 still has .bowerbird/records: read them the way the kernel converts them
+     (each output gets the record's content as its provenance, outputs of one record share a batch, inputs give roles) */
   const records: Record<string, Json> = {}
   const recDir = path.join(LIB_DIR, '.bowerbird/records')
   if (fs.existsSync(recDir)) for (const y of fs.readdirSync(recDir)) for (const f of fs.readdirSync(path.join(recDir, y))) { const r = JSON.parse(fs.readFileSync(path.join(recDir, y, f), 'utf8')); records[r.id] = r }
+  const recOf = (m: Json): string | undefined => m.origin ?? (m.relations ?? []).find((r: Json) => r.type === 'source' && r.record)?.record
+  const outputs = new Map<string, number>()
+  for (const x of metas) { const r = recOf(x.m); if (r) outputs.set(r, (outputs.get(r) ?? 0) + 1) }
+  for (const x of metas) {
+    const rid = recOf(x.m), rec = rid ? records[rid] : undefined
+    for (const r of x.m.relations ?? []) { const role = rec?.inputs?.find((i: Json) => i.id === r.to)?.role; if (role && !r.role) r.role = role; delete r.record }
+    if (rec && !x.m.provenance) {
+      const rect = rec.params?.rect
+      const params = rect && typeof rect === 'object' && !Array.isArray(rect) ? { ...rec.params, rect: rect[x.m.id] } : rec.params
+      x.m.provenance = { method: rec.method, tool: rec.tool, plugin: rec.plugin, prompt: rec.prompt, params, ...((outputs.get(rid!) ?? 0) > 1 ? { batch: `bat_${rid!.slice(4)}` } : {}), by: rec.by, at: rec.at, note: rec.note }
+    }
+    delete x.m.origin
+  }
   const trashDir = path.join(LIB_DIR, '.bowerbird/trash')
   const trash = fs.existsSync(trashDir) ? fs.readdirSync(trashDir).map(id => JSON.parse(fs.readFileSync(path.join(trashDir, id, 'info.json'), 'utf8'))) : []
   const tagsJson = JSON.parse(fs.readFileSync(path.join(LIB_DIR, '.bowerbird/tags.json'), 'utf8'))
@@ -51,7 +66,7 @@ function load() {
       description: m.description ?? null, flags, thumbnail: format === 'image' && exists(rel) ? `/api/v1/libraries/${LIB}/assets/${id}/file` : null, thumbState: 'ready', aspect: 1, badge: null,
       issueLevel: flags.includes('broken') || flags.includes('missing') ? 'error' : flags.includes('stale') ? 'warning' : null, issueCount: flags.length, size: size(rel),
       modified: m.modified?.at ?? m.created.at, created: m.created.at, createdBy: m.created.by, bundle: !!m.bundle, auxiliary: !!m.auxiliary, memberCount: members,
-      cellText: format === 'doc' ? { title: name } : null, missingPlugin: ext === 'skel' ? { id: 'community.spine', range: '^1.4.0', displayName: 'Spine' } : null
+      cellText: format === 'doc' ? { title: name } : null, metaPath: rel + '.bmeta', missingPlugin: ext === 'skel' ? { id: 'community.spine', range: '^1.4.0', displayName: 'Spine' } : null
     }
   }
   const relView = (r: Json, from: string, other: string) => {
@@ -59,7 +74,7 @@ function load() {
     const stale = r.type === 'source' && !!t && !!r.toHash && t.m.hash !== r.toHash
     const vs: Json[] = t?.m.versions ?? []
     return {
-      type: r.type, from, to: r.to, target: summary(other), targetName: path.basename(byId.get(other)?.rel ?? r.to), targetInTrash: trash.some(x => x.assetId === r.to), slot: r.slot, note: r.note, toHash: r.toHash, record: r.record,
+      type: r.type, from, to: r.to, target: summary(other), targetName: path.basename(byId.get(other)?.rel ?? r.to), targetInTrash: trash.some(x => x.assetId === r.to), slot: r.slot, note: r.note, toHash: r.toHash, role: r.role,
       broken: !t, stale, staleFrom: stale ? vs.findIndex(v => v.hash === r.toHash) + 1 || 1 : undefined, staleTo: stale ? vs.length : undefined
     }
   }
@@ -68,37 +83,36 @@ function load() {
     const m = byId.get(id)!.m
     const outgoing = (m.relations ?? []).map((r: Json) => relView(r, id, r.to))
     const incoming = metas.flatMap(o => (o.m.relations ?? []).filter((r: Json) => r.to === id).map((r: Json) => relView(r, o.m.id, o.m.id)))
-    const recId = m.origin ?? (m.relations ?? []).find((r: Json) => r.type === 'source' && r.record)?.record
     return {
       ...s, hash: m.hash, descriptionFull: m.description ?? null, auto: m.auto ?? null, fields: m.fields ?? {}, reviewVerdict: m.review ?? null,
-      versions: m.versions ?? [{ hash: m.hash, size: s.size, at: m.created.at, by: m.created.by }], views: m.views ?? null, thumbnailManual: false, origin: m.origin ?? null,
-      modifiedBy: m.modified?.by ?? null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [], relations: { outgoing, incoming }, issues: [], record: recId ? records[recId] ?? null : null,
+      versions: m.versions ?? [{ hash: m.hash, size: s.size, at: m.created.at, by: m.created.by }], views: m.views ?? null, thumbnailManual: false, provenance: m.provenance ?? null,
+      modifiedBy: m.modified?.by ?? null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [], relations: { outgoing, incoming }, issues: [],
       bundleFiles: null, targetSize: null, stages: []
     }
   }
   const lineage = (center: string, dir: string, depth: number) => {
-    const nodes = new Map<string, Json>(), edges: Json[] = [], missing: Json[] = [], recs: Json = {}
+    const nodes = new Map<string, Json>(), edges: Json[] = [], missing: Json[] = [], prov: Json = {}
     let frontier = [center]
     for (let d = 0; d < depth && frontier.length; d++) {
       const next: string[] = []
       for (const id of frontier) {
         const pairs = dir === 'up'
-          ? (byId.get(id)?.m.relations ?? []).filter((r: Json) => r.type === 'source').map((r: Json) => ({ from: id, to: r.to, r }))
-          : metas.flatMap(o => (o.m.relations ?? []).filter((r: Json) => r.type === 'source' && r.to === id).map((r: Json) => ({ from: o.m.id, to: id, r })))
+          ? (byId.get(id)?.m.relations ?? []).filter((r: Json) => r.type === 'source' || r.type === 'reference').map((r: Json) => ({ from: id, to: r.to, r }))
+          : metas.flatMap(o => (o.m.relations ?? []).filter((r: Json) => (r.type === 'source' || r.type === 'reference') && r.to === id).map((r: Json) => ({ from: o.m.id, to: id, r })))
         for (const p of pairs) {
           const other = dir === 'up' ? p.to : p.from
           const t = byId.get(p.to)
-          edges.push({ type: 'source', from: p.from, to: p.to, slot: p.r.slot, note: p.r.note, broken: !t, stale: !!t && !!p.r.toHash && t.m.hash !== p.r.toHash, record: p.r.record })
-          if (p.r.record && records[p.r.record]) recs[p.r.record] = records[p.r.record]
+          edges.push({ type: p.r.type, from: p.from, to: p.to, slot: p.r.slot, note: p.r.note, broken: !t, stale: p.r.type === 'source' && !!t && !!p.r.toHash && t.m.hash !== p.r.toHash, role: p.r.role })
           if (!byId.has(other)) { missing.push({ id: other, name: null, inTrash: trash.some(x => x.assetId === other) }); continue }
           if (!nodes.has(other)) { nodes.set(other, summary(other)!); next.push(other) }
         }
       }
       frontier = next
     }
-    return { center, nodes: [...nodes.values()], missing, edges, records: recs }
+    for (const id of [center, ...nodes.keys()]) { const pv = byId.get(id)?.m.provenance; if (pv) prov[id] = pv }
+    return { center, nodes: [...nodes.values()], missing, edges, provenance: prov }
   }
-  return { metas, byId, records, trash, tagsJson, summary, detail, lineage, exists }
+  return { metas, byId, trash, tagsJson, summary, detail, lineage, exists }
 }
 
 function api(): Plugin {
@@ -158,13 +172,13 @@ function api(): Plugin {
             if (f.relation) items = items.filter(a => (db.byId.get(a.id)!.m.relations ?? []).some((r: Json) => r.type === f.relation.type && r.to === f.relation.to))
             if (f.folder) items = items.filter(a => a.path.startsWith(f.folder + '/'))
             if (f.format) items = items.filter(a => f.format.includes(a.format))
+            if (f.batch) items = items.filter(a => db.byId.get(a.id)!.m.provenance?.batch === f.batch)
             return send(res, { items, total: items.length, cursor: null })
           }
           if ((x = m(/^\/libraries\/[^/]+\/assets\/([^/]+)$/))) { const d = db.detail(x[1]!); return d ? send(res, d) : send(res, { error: { code: 'not_found', message: 'not found' } }, 404) }
           if ((x = m(/^\/libraries\/[^/]+\/assets\/([^/]+)\/versions$/))) { const d = db.detail(x[1]!)!; return send(res, { versions: d.versions.map((v: Json, i: number, a: Json[]) => ({ ...v, n: i + 1, current: i === a.length - 1, hasContent: i === a.length - 1 })), store: null }) }
           if ((x = m(/^\/libraries\/[^/]+\/assets\/([^/]+)\/lineage$/))) return send(res, db.lineage(x[1]!, url.searchParams.get('direction') ?? 'up', Number(url.searchParams.get('depth') ?? 5)))
           if ((x = m(/^\/libraries\/[^/]+\/assets\/([^/]+)\/file$/))) { const r = db.byId.get(x[1]!); if (!r || !db.exists(r.rel)) { res.statusCode = 404; return res.end() } return fs.createReadStream(path.join(LIB_DIR, r.rel)).pipe(res) }
-          if ((x = m(/^\/libraries\/[^/]+\/records\/([^/]+)$/))) { const r = db.records[x[1]!]; return send(res, { record: r, outputs: db.metas.filter(o => o.m.origin === r?.id || (o.m.relations ?? []).some((q: Json) => q.record === r?.id)).map(o => db.summary(o.m.id)) }) }
           if (p === `${L}/issues`) return send(res, issues())
           if ((x = m(/^\/libraries\/[^/]+\/issues\/([^/]+)\/candidates$/))) return send(res, { candidates: [{ path: 'characters/hero/_old/hero_idle.fbx', size: 1, sameContent: false, similarity: 0.9, reason: '同名 · 内容改过，可能是重新导出的' }, { path: 'characters/hero/export/hero_idle_v2.fbx', size: 1, sameContent: false, similarity: 0.6, reason: '名字相近 · 2 天前出现' }] })
           if (p === `${L}/trash`) {

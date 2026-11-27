@@ -1,7 +1,8 @@
 /**
  * On-disk formats of a library folder (library-format.md, ADR-017).
  * Everything here is the source of truth: .bmeta sidecars, _folder.bmeta,
- * .bowerbird/library.json, tags.json, views/*.json, records/<year>/*.json, trash/<id>/info.json.
+ * .bowerbird/library.json, tags.json, views/*.json, trash/<id>/info.json (and, read once for conversion, the
+ * `records/<year>/*.json` of libraries written before ADR-070).
  *
  * Unknown top-level keys must be preserved (looseObject) so an older Bowerbird
  * never drops data written by a newer one.
@@ -22,10 +23,10 @@ export type Stamp = z.infer<typeof Stamp>
 export const Relation = z.looseObject({
   type: RelationType,
   to: Guid,
-  /** Upstream content hash when the relation was made / last acknowledged. Only `source`. */
+  /** Counterpart content hash when the relation was made / last acknowledged: `source` (tracked) and `reference` (kept, not tracked). */
   toHash: Hash.optional(),
-  /** Production record id. Only `source`. */
-  record: z.string().optional(),
+  /** What the counterpart was to the making of this asset, e.g. reference, mask, turnaround (ADR-070). Only source / reference. */
+  role: z.string().optional(),
   /** Slot name: the reference name written inside the asset file (e.g. a texture file name in a glTF). */
   slot: z.string().optional(),
   note: z.string().optional()
@@ -64,9 +65,30 @@ export const AutoInfo = z.looseObject({
 export type AutoInfo = z.infer<typeof AutoInfo>
 
 /**
- * The .bmeta sidecar. Required: bb, id, hash, stage, created.
- * `origin` is the production record that produced this asset (ADR-027, implementation-time proposal):
- * needed when the record has no input assets, so no source relation can carry it.
+ * How an asset was made (ADR-070): its own information, written in its own .bmeta and editable like a tag.
+ * The input assets are its `source` / `reference` relations (with `role`). Outputs of one run share `batch`.
+ */
+export const Provenance = z.looseObject({
+  /** Open value: built-in methods, or `<pluginId>/<name>` for plugin-defined ones. */
+  method: z.string().min(1),
+  tool: z.string().optional(),
+  /** `<pluginId>@<version>`, filled by the kernel when a plugin registered the output. */
+  plugin: z.string().optional(),
+  prompt: z.string().optional(),
+  /** Conventional keys: model, seed, negativePrompt; slices put their `rect` here (ADR-036). */
+  params: z.record(z.string(), z.unknown()).optional(),
+  /** Outputs of one run carry the same batch id. */
+  batch: z.string().optional(),
+  by: Actor,
+  at: IsoTime,
+  note: z.string().optional()
+})
+export type Provenance = z.infer<typeof Provenance>
+export const PROVENANCE_KEY_ORDER = ['method', 'tool', 'plugin', 'prompt', 'params', 'batch', 'by', 'at', 'note'] as const
+
+/**
+ * The .bmeta sidecar. Required: bb, id, hash, stage, created. It exists only once the asset has information that
+ * cannot be recomputed from the file (ADR-067); a file nobody said anything about lives in the index only.
  */
 export const Bmeta = z.looseObject({
   bb: z.literal(FORMAT_VERSION),
@@ -84,7 +106,7 @@ export const Bmeta = z.looseObject({
   bundle: z.boolean().optional(),
   thumbnail: z.string().nullable().optional(),
   views: ViewGrid.optional(),
-  origin: z.string().optional(),
+  provenance: Provenance.optional(),
   created: Stamp,
   modified: Stamp.optional()
 })
@@ -93,7 +115,7 @@ export type Bmeta = z.infer<typeof Bmeta>
 /** Output key order of a .bmeta (fixed, two-space indent). Unknown keys follow in their original order. */
 export const BMETA_KEY_ORDER = [
   'bb', 'id', 'hash', 'stage', 'tags', 'description', 'fields', 'auto', 'relations', 'review', 'versions',
-  'auxiliary', 'bundle', 'thumbnail', 'views', 'origin', 'created', 'modified'
+  'auxiliary', 'bundle', 'thumbnail', 'views', 'provenance', 'created', 'modified'
 ] as const
 
 /** Defaults a folder gives to assets claimed inside it; inherited item by item from ancestors. */
@@ -175,7 +197,10 @@ export type RecordInputRef = z.infer<typeof RecordInputRef>
 export const RecordNote = z.object({ at: IsoTime, by: Actor, text: z.string() })
 export type RecordNote = z.infer<typeof RecordNote>
 
-/** `.bowerbird/records/<year>/<id>.json`. Outputs are not listed; find them via source relations / origin. */
+/**
+ * `.bowerbird/records/<year>/<id>.json` of libraries written before ADR-070. Read only to convert such a library:
+ * each record's content moves into the `provenance` of the assets it made, and the records folder is set aside.
+ */
 export const ProductionRecord = z.looseObject({
   bb: z.literal(FORMAT_VERSION).optional(),
   id: z.string().regex(/^rec_/),

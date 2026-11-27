@@ -1,11 +1,12 @@
-import type { AssetSummary, Lineage, LineageEdge, ProductionRecord, RelationView } from '@bowerbird/schema'
+import type { AssetSummary, Lineage, LineageEdge, Provenance, RelationView } from '@bowerbird/schema'
 
 /**
  * The relation graph's model (web-shell.md 关系图): centred on one asset, left to right in production order.
- * Upstream `source` relations are traced to the top; downstream opens `down` levels (default two) and grows on
- * demand; only the chain the centre sits on is followed. Around the centre only: what it uses (left), what uses
- * it (right), its design object (above) and the assets belonging to it (right). Downstream siblings made by one
- * production record fold into a group when there are more than 4; members of a design object when more than 6.
+ * Upstream `source` and `reference` relations (what an asset was made from, ADR-073) are traced to the top; downstream
+ * opens `down` levels (default two) and grows on demand; only the chain the centre sits on is followed. Around the
+ * centre only: what it uses (left), what uses it (right), its design object (above) and the assets belonging to it
+ * (right). Downstream siblings made in one run (same `provenance.batch`, ADR-070) fold into a group when there are
+ * more than 4; members of a design object when more than 6.
  * Pure: no React, no fetching — RelationGraph feeds it the lineages and the centre's relations.
  */
 
@@ -14,19 +15,22 @@ export const GROUP_MEMBERS = 6
 
 export interface GraphInput {
   center: AssetSummary
-  /** Lineage up, types [source], deep enough to reach the top. */
-  up?: Pick<Lineage, 'nodes' | 'edges' | 'missing' | 'records'> | null
-  /** Lineage down, types [source], depth = opts.down + 1 (one level more, to know what can still be opened). */
-  down?: Pick<Lineage, 'nodes' | 'edges' | 'missing' | 'records'> | null
+  /** Lineage up, types [source, reference], deep enough to reach the top. */
+  up?: Pick<Lineage, 'nodes' | 'edges' | 'missing' | 'provenance'> | null
+  /** Lineage down, types [source, reference], depth = opts.down + 1 (one level more, to know what can still be opened). */
+  down?: Pick<Lineage, 'nodes' | 'edges' | 'missing' | 'provenance'> | null
   /** The centre's own relations (all types, both directions). */
   relations: { outgoing: RelationView[]; incoming: RelationView[] }
-  /** Production records that made an asset without input assets (`origin`), by asset id. */
-  origins?: Record<string, ProductionRecord>
+  /** The centre's own provenance (also in the lineages; given here so the graph does not wait for them). */
+  provenance?: Provenance | null
 }
 export interface GraphOpts { down: number; open: Record<string, boolean> }
 
 /** The relation an edge stands for, in storage terms: `from` depends on `to`. */
-export interface RelRef { type: string; from: string; to: string; slot?: string; note?: string; record?: string }
+export interface RelRef { type: string; from: string; to: string; slot?: string; note?: string; role?: string }
+
+/** Relation types that say what an asset was made from: laid out as the production chain (ADR-073). */
+export const isUpstreamType = (type: string): boolean => type === 'source' || type === 'reference'
 
 export type Lane = 'main' | 'uses' | 'top'
 export interface GNode {
@@ -36,7 +40,9 @@ export interface GNode {
   /** missing: last known name and whether it waits in the trash. */
   name?: string
   inTrash?: boolean
-  rec?: ProductionRecord
+  /** rec: how the asset `recOf` was made, shown where its upstream would be (it was made from no asset). */
+  rec?: Provenance
+  recOf?: string
   items?: AssetSummary[]
   members?: boolean
   gkey?: string
@@ -58,9 +64,11 @@ export interface GEdge {
   rel?: RelRef
   broken: boolean
   stale: boolean
-  /** Origin record edge (record node → asset) or a grouped edge with its record. */
-  recNode?: ProductionRecord
-  rec?: ProductionRecord
+  /** Provenance edge (provenance node → the asset it made) or a grouped edge with the batch's provenance. */
+  recNode?: Provenance
+  rec?: Provenance
+  /** The asset whose provenance `recNode` / `rec` is (a group: its first member). */
+  recOf?: string
   group?: boolean
   items?: AssetSummary[]
   vertical?: boolean
@@ -79,9 +87,9 @@ const edgeKey = (type: string, from: string, to: string, slot?: string) => `${ty
 
 export function methodLabel(method: string, tr: Tr): string { return METHOD_KEYS[method] ? tr(METHOD_KEYS[method]!) : method }
 
-/** Second line for a source edge: how it was made and by whom. */
-export function sourceSub(rec: ProductionRecord | undefined, tr: Tr): string {
-  return rec ? `${methodLabel(rec.method, tr)} · ${rec.by}` : tr('w2.rel.type.source')
+/** Second line for an upstream edge: how the downstream asset was made and by whom (its provenance), else the type. */
+export function sourceSub(prov: Provenance | undefined, tr: Tr, type = 'source'): string {
+  return prov ? `${methodLabel(prov.method, tr)} · ${prov.by}` : tr(type === 'reference' ? 'w2.rel.type.reference' : 'w2.rel.type.source')
 }
 /** Second line for a uses edge: the note and the slot written in the file (ADR-018). */
 /** Under a used asset's node: what it is for — the relation's note (「基础色」, graph.js), else its slot; the full
@@ -95,7 +103,8 @@ export function buildGraph(input: GraphInput, opts: GraphOpts, tr: Tr): Graph {
   const order: string[] = []
   const edges: GEdge[] = []
   const seenE = new Set<string>()
-  const records: Record<string, ProductionRecord> = { ...(input.up?.records ?? {}), ...(input.down?.records ?? {}) }
+  const provs: Record<string, Provenance> = { ...(input.up?.provenance ?? {}), ...(input.down?.provenance ?? {}) }
+  if (input.provenance) provs[input.center.id] = input.provenance
   const upNodes = new Map((input.up?.nodes ?? []).map(n => [n.id, n]))
   const downNodes = new Map((input.down?.nodes ?? []).map(n => [n.id, n]))
   const missing = new Map([...(input.up?.missing ?? []), ...(input.down?.missing ?? [])].map(m => [m.id, m]))
@@ -114,12 +123,12 @@ export function buildGraph(input: GraphInput, opts: GraphOpts, tr: Tr): Graph {
     seenE.add(key)
     edges.push({ ...e, key, d: '', mx: 0, my: 0, y1: 0, y2: 0, spine: false })
   }
-  const relOf = (e: LineageEdge): RelRef => ({ type: e.type, from: e.from, to: e.to, slot: e.slot, note: e.note, record: e.record })
+  const relOf = (e: LineageEdge): RelRef => ({ type: e.type, from: e.from, to: e.to, slot: e.slot, note: e.note, role: e.role })
 
   add({ key: centerId, kind: 'asset', asset: input.center, col: 0, lane: 'main', center: true })
 
-  /* upstream: every source, to the top; a node reached by several paths sits left of all of them */
-  const upEdges = (input.up?.edges ?? []).filter(e => e.type === 'source')
+  /* upstream: every source and reference, to the top; a node reached by several paths sits left of all of them */
+  const upEdges = (input.up?.edges ?? []).filter(e => isUpstreamType(e.type))
   const climb = (a: string, d: number, guard: number) => {
     if (guard > 60) return
     for (const e of upEdges) {
@@ -128,42 +137,45 @@ export function buildGraph(input: GraphInput, opts: GraphOpts, tr: Tr): Graph {
       if (!t) {
         const m = missing.get(e.to)
         const mk = add({ key: `miss:${e.from}:${e.to}`, kind: 'missing', name: m?.name ?? e.to, inTrash: !!m?.inTrash, col: -(d + 1), lane: 'main' })
-        link({ type: 'source', from: mk.key, to: a, rel: relOf(e), broken: true, stale: false })
+        link({ type: e.type, from: mk.key, to: a, rel: relOf(e), broken: true, stale: false })
         continue
       }
-      const n = add({ key: t.id, kind: 'asset', asset: t, col: -(d + 1), lane: 'main', sub: sourceSub(e.record ? records[e.record] : undefined, tr) })
+      const n = add({ key: t.id, kind: 'asset', asset: t, col: -(d + 1), lane: 'main', sub: sourceSub(provs[e.from], tr, e.type) })
       n.col = Math.min(n.col, -(d + 1))
-      link({ type: 'source', from: t.id, to: a, rel: relOf(e), broken: false, stale: e.stale })
+      /* a reference never tracks the other side's version (ADR-073): never「上游已更新」 */
+      link({ type: e.type, from: t.id, to: a, rel: relOf(e), broken: false, stale: e.type === 'source' && e.stale })
       climb(t.id, d + 1, guard + 1)
     }
-    /* a record that made it without input assets (ADR-027) sits where its upstream would be */
-    const origin = input.origins?.[a]
-    if (origin && !upEdges.some(e => e.from === a)) {
-      const rk = add({ key: `rec:${origin.id}`, kind: 'rec', rec: origin, col: -(d + 1), lane: 'main' })
-      link({ key: `origin|${origin.id}|${a}`, type: 'source', from: rk.key, to: a, recNode: origin, broken: false, stale: false })
+    /* how an asset made from no other asset came to be (its provenance) sits where its upstream would be */
+    const prov = provs[a]
+    if (prov && !upEdges.some(e => e.from === a)) {
+      const rk = add({ key: `rec:${a}`, kind: 'rec', rec: prov, recOf: a, col: -(d + 1), lane: 'main' })
+      link({ key: `origin|${a}`, type: 'source', from: rk.key, to: a, recNode: prov, recOf: a, broken: false, stale: false })
     }
   }
   climb(centerId, 0, 0)
 
-  /* downstream: opens on demand; siblings made by one production record fold into a group */
-  const downEdges = (input.down?.edges ?? []).filter(e => e.type === 'source' && !e.broken)
+  /* downstream: opens on demand; siblings made in one run (same batch) fold into a group */
+  const downEdges = (input.down?.edges ?? []).filter(e => isUpstreamType(e.type) && !e.broken)
   const descend = (a: string, d: number) => {
     const kids = downEdges.filter(e => e.to === a).map(e => ({ e, a: downNodes.get(e.from) })).filter((k): k is { e: LineageEdge; a: AssetSummary } => !!k.a && !nodes.has(k.a.id))
     if (!kids.length) return
     if (d >= opts.down) { const n = nodes.get(a); if (n) n.more = kids.length; return }
-    const byRec = new Map<string, typeof kids>()
-    for (const k of kids) { const r = k.e.record ?? `_${k.e.from}`; byRec.set(r, [...(byRec.get(r) ?? []), k]) }
-    for (const [r, ks] of byRec) {
+    const byBatch = new Map<string, typeof kids>()
+    for (const k of kids) { const b = provs[k.a.id]?.batch ?? `_${k.e.from}`; byBatch.set(b, [...(byBatch.get(b) ?? []), k]) }
+    for (const [b, ks] of byBatch) {
       if (ks.length > GROUP_SIBLINGS) {
-        const gk = `g:${a}:${r}`
+        const gk = `g:${a}:${b}`
         const open = !!opts.open[gk]
-        add({ key: gk, gkey: gk, kind: open ? 'frame' : 'group', items: ks.map(k => k.a), rec: records[r], col: d + 1, lane: 'main' })
-        link({ key: `grp|${gk}`, type: 'source', from: a, to: gk, group: true, rec: records[r], items: ks.map(k => k.a), broken: false, stale: ks.some(k => k.e.stale) })
+        const first = ks[0]!.a.id
+        const type = ks.every(k => k.e.type === 'reference') ? 'reference' : 'source'
+        add({ key: gk, gkey: gk, kind: open ? 'frame' : 'group', items: ks.map(k => k.a), rec: provs[first], recOf: first, col: d + 1, lane: 'main' })
+        link({ key: `grp|${gk}`, type, from: a, to: gk, group: true, rec: provs[first], recOf: first, items: ks.map(k => k.a), broken: false, stale: ks.some(k => k.e.type === 'source' && k.e.stale) })
         continue
       }
       for (const k of ks) {
-        add({ key: k.a.id, kind: 'asset', asset: k.a, col: d + 1, lane: 'main', sub: sourceSub(k.e.record ? records[k.e.record] : undefined, tr) })
-        link({ type: 'source', from: a, to: k.a.id, rel: relOf(k.e), broken: false, stale: k.e.stale })
+        add({ key: k.a.id, kind: 'asset', asset: k.a, col: d + 1, lane: 'main', sub: sourceSub(provs[k.a.id], tr, k.e.type) })
+        link({ type: k.e.type, from: a, to: k.a.id, rel: relOf(k.e), broken: false, stale: k.e.type === 'source' && k.e.stale })
         descend(k.a.id, d + 1)
       }
     }
@@ -171,9 +183,9 @@ export function buildGraph(input: GraphInput, opts: GraphOpts, tr: Tr): Graph {
   descend(centerId, 0)
 
   /* around the centre: what it uses (left), what uses it (right), its design object (above) */
-  const rv = (r: RelationView): RelRef => ({ type: r.type, from: r.from, to: r.to, slot: r.slot, note: r.note, record: r.record })
+  const rv = (r: RelationView): RelRef => ({ type: r.type, from: r.from, to: r.to, slot: r.slot, note: r.note, role: r.role })
   for (const r of input.relations.outgoing) {
-    if (r.type === 'source') continue
+    if (isUpstreamType(r.type)) continue
     if (r.type === 'belongs') {
       if (!r.target) continue
       const o = r.target
@@ -192,7 +204,7 @@ export function buildGraph(input: GraphInput, opts: GraphOpts, tr: Tr): Graph {
   }
   const members: RelationView[] = []
   for (const r of input.relations.incoming) {
-    if (r.type === 'source' || !r.target) continue
+    if (isUpstreamType(r.type) || !r.target) continue
     if (r.type === 'belongs') { if (!nodes.has(r.target.id)) members.push(r); continue }
     const m = nodes.get(r.target.id) ?? add({ key: r.target.id, kind: 'asset', asset: r.target, col: 1, lane: 'uses', sub: usesSub(r.note, r.slot, tr) })
     link({ type: r.type, from: centerId, to: m.key, rel: rv(r), broken: false, stale: false })
@@ -232,13 +244,13 @@ export function layoutGraph(G: Graph, centerId: string): void {
   const spine = new Set([centerId])
   let cur = centerId
   for (let i = 0; i < 60; i++) {
-    const e = G.edges.find(x => x.type === 'source' && x.to === cur && N.get(x.from)?.lane === 'main')
+    const e = G.edges.find(x => isUpstreamType(x.type) && x.to === cur && N.get(x.from)?.lane === 'main')
     if (!e) break
     cur = e.from; spine.add(cur)
   }
   cur = centerId
   for (let i = 0; i < 60; i++) {
-    const e = G.edges.find(x => x.type === 'source' && x.from === cur && N.get(x.to)?.lane === 'main')
+    const e = G.edges.find(x => isUpstreamType(x.type) && x.from === cur && N.get(x.to)?.lane === 'main')
     if (!e) break
     cur = e.to; spine.add(cur)
   }

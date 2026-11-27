@@ -116,7 +116,7 @@ export default defineServerPlugin({
 
 | 成员 | 作用 |
 |------|------|
-| `library` | 只读查询资产、关系、生产记录、问题；`filePath(id)` 给出文件的绝对路径 |
+| `library` | 只读查询资产、关系、出处、问题；`filePath(id)` 给出文件的绝对路径 |
 | `cache` | 写本插件产生的缓存文件（按内容寻址，写入后不再修改） |
 | `settings` | 读本插件的设置 |
 | `log` | 日志 |
@@ -126,6 +126,36 @@ export default defineServerPlugin({
 | `register.*` | 登记各扩展点的实现，以及 `route`（挂在 `/plugins/<插件标识>/` 下的自有接口；`web`、`settings` 等路径由内核保留） |
 
 插件**不能直接写资产库**：修改资产信息通过各扩展点的返回值交给内核；新增资产把登记结构（`RegisterRequest`，与 `POST /assets` 同样的字段）交给内核，例如 `JobContext.register()`、`ActionResult.assets`、入库来源的 `ingest()`。
+
+### 登记产出
+
+创建与动作的每个产出交给内核一份 `RegisterRequest`。资产是怎么做出来的写在 `provenance`（出处）里，用了哪些资产写成关系：
+
+```ts
+await job.register({
+  file: { kind: 'path', path: candidate.file, name: 'chest_1.png' },   // tmpDir 里的候选，或 { kind: 'bytes', data, name }
+  folder: request.folder,
+  stage: 'production',
+  provenance: {
+    method: 'community.imagegen/image',          // 插件自定义的方式以插件标识作前缀；也可以用 ai-generate 等内置值
+    tool: 'imagegen 2.1',
+    prompt: '红色的卡通宝箱，正面',
+    params: { model: 'imagegen-2', seed: 7 }      // 约定的键：model、seed、negativePrompt；切图写 rect: [x, y, w, h]
+  },
+  relations: [
+    { type: 'source', to: turnaround.id, role: '四视图' },      // 照着做的：它变了，产出会提示「上游已更新」
+    { type: 'reference', to: screenshot.id, role: '原型截图' }  // 只是参考：它变了不提醒
+  ],
+  onConflict: 'keep-both'
+})
+```
+
+- 内核把出处写进每个产出自己的 `.bmeta`，补上执行者、时间和插件标识与版本（`plugin`）。执行者是发起的人或 Agent，不是插件。
+- 同一次运行的产出，出处里带内核生成的同一个批次号（`batch`），不用自己给。
+- 不给 `provenance` 时，内核写 `method` 为 `<插件标识>/<创建方式标识>`（动作是 `<插件标识>/<动作标识>`），创建时带上这次运行的参数。
+- 不给来源或参考关系时，运行的输入（`CreateRequest.inputs`）成为每个产出的来源关系，带上输入的角色。
+- 没有产出的运行什么都不写。没挑中的候选留在 `tmpDir`，不要登记。
+- 创建方式与动作会自动出现在命令行（`bb create`、`bb action`）和 MCP（`bb_create`、`bb_action`）里，不用另外写命令。
 
 ### 格式插件各阶段
 

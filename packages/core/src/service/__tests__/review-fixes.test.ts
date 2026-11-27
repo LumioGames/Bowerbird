@@ -10,9 +10,12 @@ async function lib(o?: Parameters<typeof makeLib>[0]): Promise<TestLib> { const 
 afterEach(async () => { for (const t of libs) await t.close(); libs = []; cleanupTmp() })
 
 const bytes = (s: string) => new Uint8Array(Buffer.from(s))
+/** Upload a file and give it some information, so it has its .bmeta (ADR-067). */
 async function up(t: TestLib, p: string, content = p) {
   const i = p.lastIndexOf('/')
-  return (await t.svc.register({ fields: { folder: i < 0 ? '' : p.slice(0, i) }, file: { name: p.slice(i + 1), data: bytes(content) } }, ctx)).asset!.id
+  const id = (await t.svc.register({ fields: { folder: i < 0 ? '' : p.slice(0, i) }, file: { name: p.slice(i + 1), data: bytes(content) } }, ctx)).asset!.id
+  await t.keep(p)
+  return id
 }
 const trashInfos = (t: TestLib) => {
   const dir = t.abs('.bowerbird/trash')
@@ -217,6 +220,7 @@ describe('P2-3 / P2-4 replacing never deletes; every trash move has info.json', 
     fs.writeFileSync(t.abs('ghost.png.bmeta'), 'not json')
     t.write('shop.html', '<html>')
     await t.scan()
+    await t.keep('shop.html')
     const theirs = { ...t.sidecar('shop.html'), tags: ['v2'] }
     fs.writeFileSync(t.abs('shop.html (1).bmeta'), JSON.stringify(theirs, null, 2))
     await t.scan()
@@ -266,7 +270,7 @@ describe('P2-6 duplicate identity survives an index rebuild', () => {
     const t = await lib()
     t.write('x.png', 'x')
     await t.scan()
-    const id = t.idOf('x.png')
+    const [id] = await t.keep('x.png')
     t.cp('x.png', 'x (1).png'); t.cp('x.png.bmeta', 'x (1).png.bmeta')
     await t.scan()
     const copy = t.sidecar('x (1).png')

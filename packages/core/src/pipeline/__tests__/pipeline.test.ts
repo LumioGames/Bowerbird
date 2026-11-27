@@ -696,9 +696,10 @@ describe('action jobs (K11) and slots', () => {
     expect(done).toMatchObject({ status: 'done', message: '切出 2 张', progress: 1 })
     expect(done.outputs).toHaveLength(2)
     expect(seen).toEqual([['a.png']])
-    expect(deps.registered[0]!.req.record).toMatchObject({ method: 'slice' })
-    expect(deps.registered[1]!.req.record).toBe('rec_1')
-    expect(deps.registered[1]!.ctx).toMatchObject({ actor: 'user:lin', pluginId: 'studio.tools', recordId: 'rec_1' })
+    // every output of the run: the same batch, the action as method unless the output says more (ADR-070)
+    const batch = deps.registered[0]!.ctx.batch
+    expect(batch).toMatch(/^bat_/)
+    expect(deps.registered[1]!.ctx).toMatchObject({ actor: 'user:lin', pluginId: 'studio.tools', batch, provenance: { method: 'studio.tools/slice' } })
     expect(pipe.overview().creates.map(c => c.id)).toContain(job.id)
     expect(events.history.some(e => e.type === 'job.updated' && (e.data as JobInfo).kind === 'action')).toBe(true)
     // Bare id when unique; not applicable or unknown selections are refused.
@@ -950,13 +951,13 @@ describe('creation jobs (ADR-016, ADR-042)', () => {
   }
   const ctx = { actor: 'agent:painter', isLocal: true }
 
-  it('reports progress with a follow-up action and registers several outputs under one record', async () => {
+  it('reports progress with a follow-up action and registers several outputs as one batch', async () => {
     let gate!: () => void
     const wait = new Promise<void>(r => { gate = r })
     const { db, deps, pipe, events } = creatorRig(async (req, job) => {
       job.progress(0.5, '生成中', { label: '挑选…', page: 'pick', params: { job: job.id } })
       await wait
-      const a = await job.register({ file: { kind: 'bytes', data: new Uint8Array([1]), name: 'forge_1.png' }, record: { method: 'community.forge/image', prompt: 'a red chest' }, tags: ['AI'] })
+      const a = await job.register({ file: { kind: 'bytes', data: new Uint8Array([1]), name: 'forge_1.png' }, provenance: { method: 'community.forge/image', prompt: 'a red chest' }, tags: ['AI'] })
       const b = await job.register({ file: { kind: 'bytes', data: new Uint8Array([2]), name: 'forge_2.png' } })
       expect(a.id).not.toBe(b.id)
       expect(req.actor).toBe('agent:painter')
@@ -974,29 +975,31 @@ describe('creation jobs (ADR-016, ADR-042)', () => {
     expect(done).toMatchObject({ status: 'done', progress: 1 })
     expect(done.outputs).toHaveLength(2)
     expect(deps.registered).toHaveLength(2)
-    expect(deps.registered[0]!.ctx).toEqual({ actor: 'agent:painter', pluginId: 'community.forge', pluginVersion: '0.4.0' })
-    expect(deps.registered[0]!.req.record).toMatchObject({ method: 'community.forge/image', prompt: 'a red chest', inputs: [{ id: ref, role: 'reference' }] })
-    expect(deps.registered[1]!.ctx.recordId).toBe('rec_1')
-    expect(deps.registered[1]!.req.record).toBe('rec_1')
-    expect(deps.records).toBe(1)
+    const run = deps.registered[0]!.ctx
+    expect(run).toMatchObject({
+      actor: 'agent:painter', pluginId: 'community.forge', pluginVersion: '0.4.0', batch: expect.stringMatching(/^bat_/),
+      provenance: { method: 'community.forge/image', params: { prompt: 'a red chest', seed: 7 } }, inputs: [{ id: ref, role: 'reference' }]
+    })
+    expect(deps.registered[0]!.req.provenance).toMatchObject({ method: 'community.forge/image', prompt: 'a red chest' })
+    expect(deps.registered[1]!.ctx.batch).toBe(run.batch)
+    expect(deps.registered[1]!.req.provenance).toBeUndefined()
     expect(events.history.filter(e => e.type === 'job.updated' && (e.data as JobInfo).id === job.id).length).toBeGreaterThanOrEqual(4)
     expect(pipe.overview().creates.map(c => c.id)).toEqual([job.id])
   })
 
-  it('a run without outputs writes no record; a run without record input gets the default record', async () => {
+  it('a run without outputs registers nothing; outputs that say nothing get the creator and its params as provenance', async () => {
     const empty = creatorRig(async job => { void job })
     empty.pipe.start()
     const j = await empty.pipe.startCreate('image', { params: {}, inputs: [] }, ctx)
     await empty.pipe.idle()
     expect(empty.pipe.job(j.id)!.status).toBe('done')
     expect(empty.deps.registered).toHaveLength(0)
-    expect(empty.deps.records).toBe(0)
 
     const plain = creatorRig(async (_req, job) => { await job.register({ file: { kind: 'bytes', data: new Uint8Array([1]), name: 'x.png' } }) })
     plain.pipe.start()
     await plain.pipe.startCreate('community.forge:image', { params: { seed: 1 }, inputs: [] }, ctx)
     await plain.pipe.idle()
-    expect(plain.deps.registered[0]!.req.record).toEqual({ method: 'community.forge/image', params: { seed: 1 } })
+    expect(plain.deps.registered[0]!.ctx.provenance).toEqual({ method: 'community.forge/image', params: { seed: 1 } })
   })
 
   it('cancels through the abort signal; later registrations are refused', async () => {

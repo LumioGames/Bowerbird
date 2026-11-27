@@ -1,4 +1,4 @@
-/** LibraryService: registration, edits, copy / move / delete semantics, review, records, relations. */
+/** LibraryService: registration, edits, copy / move / delete semantics, review, provenance, relations. */
 import fs from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { effectiveReview } from '@bowerbird/schema'
@@ -16,7 +16,7 @@ async function up(t: TestLib, path: string, content = path) {
 }
 
 describe('register', () => {
-  it('uploads into a folder with its defaults, a production record, source relations and tag governance', async () => {
+  it('uploads into a folder with its defaults, its provenance, source relations and tag governance', async () => {
     const t = await lib()
     const concept = await up(t, 'props/chest_concept.png', 'concept')
     await t.svc.patch(concept, { tags: { add: ['宝箱'] } }, ctx)
@@ -25,7 +25,8 @@ describe('register', () => {
     const r = await t.svc.register({
       fields: {
         folder: 'props/gen', tags: ['宝箱s', '全新'], description: '四视图',
-        record: { method: 'ai-generate', prompt: '卡通宝箱四视图', params: { seed: 7 }, inputs: [{ id: concept, role: 'reference' }] },
+        provenance: { method: 'ai-generate', prompt: '卡通宝箱四视图', params: { seed: 7 } },
+        relations: [{ type: 'source', to: concept, role: 'reference' }],
         views: { rows: 2, cols: 2, cells: ['front', 'side', 'back', 'top'] }
       },
       file: { name: 'chest_turnaround.png', data: bytes('turn') }
@@ -36,13 +37,11 @@ describe('register', () => {
     expect(a.tags).toEqual(['道具', '宝箱s', '全新'])
     expect(a.createdBy).toBe('agent:bot')
     const m = t.sidecar('props/gen/chest_turnaround.png')
-    expect(m.origin).toBe(r.recordId)
     expect(m.views?.cells).toEqual(['front', 'side', 'back', 'top'])
-    expect(m.relations).toEqual([{ type: 'source', to: concept, toHash: t.row(concept)!.hash, record: r.recordId }])
-    const rec = (await t.svc.record(r.recordId!)).record
-    expect(rec).toMatchObject({ method: 'ai-generate', by: 'agent:bot', inputs: [{ id: concept, hash: t.row(concept)!.hash, role: 'reference' }] })
-    expect(rec.plugin).toBeUndefined()
-    expect((await t.svc.record(r.recordId!)).outputs.map(o => o.id)).toEqual([a.id])
+    expect(m.relations).toEqual([{ type: 'source', to: concept, toHash: t.row(concept)!.hash, role: 'reference' }])
+    expect(m.provenance).toMatchObject({ method: 'ai-generate', prompt: '卡通宝箱四视图', params: { seed: 7 }, by: 'agent:bot' })
+    expect(m.provenance?.plugin).toBeUndefined()
+    expect(a.provenance?.method).toBe('ai-generate')
     expect(r.newTags.find(n => n.tag === '宝箱s')?.similar).toEqual(['宝箱'])
     expect(r.newTags.map(n => n.tag)).toEqual(['宝箱s', '全新'])
     expect(t.logs.some(l => l.msg === 'write' && l.data?.op === 'asset.register' && l.data?.actor === 'agent:bot')).toBe(true)
@@ -86,19 +85,17 @@ describe('register', () => {
     await expect(t.svc.register({ fields: { folder: 'in' }, file: { name: 'orphan.png', data: bytes('o') } }, ctx)).rejects.toMatchObject({ code: 'conflict' })
   })
 
-  it('fills record id, input hashes and the plugin for plugin registrations (one record per run)', async () => {
+  it('gives every output of a plugin run the run\'s provenance, batch id and inputs (ADR-070)', async () => {
     const t = await lib()
     const input = await up(t, 'in.png', 'in')
-    const first = await t.svc.deps.register({ file: { kind: 'bytes', name: 'o1.png', data: bytes('o1') }, folder: 'out', record: { method: 'forge/gen', inputs: [{ id: input, role: 'ref' }] } }, { actor: 'user:lin', pluginId: 'forge', pluginVersion: '0.1.0' })
-    const second = await t.svc.deps.register({ file: { kind: 'bytes', name: 'o2.png', data: bytes('o2') }, folder: 'out' }, { actor: 'user:lin', pluginId: 'forge', pluginVersion: '0.1.0', recordId: first.recordId! })
-    expect(second.recordId).toBe(first.recordId)
-    const rec = await t.svc.record(first.recordId!)
-    expect(rec.record).toMatchObject({ method: 'forge/gen', plugin: 'forge@0.1.0', by: 'user:lin', inputs: [{ id: input, hash: t.row(input)!.hash, role: 'ref' }] })
-    expect(rec.outputs.map(o => o.name).sort()).toEqual(['o1.png', 'o2.png'])
-    expect(t.sidecar('out/o2.png').relations?.[0]).toMatchObject({ type: 'source', to: input, record: first.recordId })
-    // every output carries origin (ADR-027), later outputs included
-    expect(t.sidecar('out/o1.png').origin).toBe(first.recordId)
-    expect(t.sidecar('out/o2.png').origin).toBe(first.recordId)
+    const run = { actor: 'user:lin', pluginId: 'forge', pluginVersion: '0.1.0', batch: 'bat_run1', provenance: { method: 'forge/gen', params: { steps: 4 } }, inputs: [{ id: input, role: 'ref' }] }
+    const first = await t.svc.deps.register({ file: { kind: 'bytes', name: 'o1.png', data: bytes('o1') }, folder: 'out', provenance: { method: 'forge/gen', prompt: '一只鸟' } }, run)
+    await t.svc.deps.register({ file: { kind: 'bytes', name: 'o2.png', data: bytes('o2') }, folder: 'out' }, run)
+    expect(t.sidecar('out/o1.png').provenance).toMatchObject({ method: 'forge/gen', prompt: '一只鸟', plugin: 'forge@0.1.0', batch: 'bat_run1', by: 'user:lin' })
+    expect(t.sidecar('out/o2.png').provenance).toMatchObject({ method: 'forge/gen', params: { steps: 4 }, plugin: 'forge@0.1.0', batch: 'bat_run1' })
+    for (const p of ['out/o1.png', 'out/o2.png']) expect(t.sidecar(p).relations).toEqual([{ type: 'source', to: input, toHash: t.row(input)!.hash, role: 'ref' }])
+    const batch = await t.svc.search({ filter: { batch: 'bat_run1' } }, ctx)
+    expect(batch.items.map(i => i.name).sort()).toEqual(['o1.png', 'o2.png'])
     expect(first.info.createdBy).toBe('user:lin')
   })
 })
@@ -150,12 +147,10 @@ describe('copy', () => {
       expect.objectContaining({ type: 'belongs', to: design }),
       expect.objectContaining({ type: 'source', to: design })
     ]))
-    // plus a source relation to the original with a `copy` record
+    // plus a source relation to the original, and the provenance `copy` (ADR-070)
     const toOrig = rels.find(r => r.type === 'source' && r.to === orig)!
     expect(toOrig.toHash).toBe(t.row(orig)!.hash)
-    const rec = (await t.svc.record(toOrig.record!)).record
-    expect(rec).toMatchObject({ method: 'copy', by: 'user:tester', inputs: [{ id: orig, hash: t.row(orig)!.hash }] })
-    expect(t.sidecar('props/chest_1.png').origin).toBe(rec.id)
+    expect(t.sidecar('props/chest_1.png').provenance).toMatchObject({ method: 'copy', by: 'user:tester' })
     // who depends on the original stays with the original
     expect(t.sidecar('ui/shop.png').relations).toEqual([expect.objectContaining({ to: orig })])
     expect(copy.relations.incoming).toEqual([])
@@ -219,6 +214,13 @@ describe('trash and restore', () => {
     await expect(t.svc.restore(trashId, false, ctx)).rejects.toMatchObject({ code: 'conflict', details: { suggested: 'x_1.png' } })
     const r = await t.svc.restore(trashId, true, ctx)
     expect(r.renamedTo).toBe('x_1.png')
+    expect(t.idOf('x_1.png')).toBe(a)
+    // it was only seen: it comes back without a .bmeta (ADR-067)
+    expect(t.exists('x_1.png.bmeta')).toBe(false)
+    // one with information comes back with it
+    await t.keep('x_1.png')
+    const again = await t.svc.trash(a, { force: false }, ctx)
+    await t.svc.restore(again.trashId, true, ctx)
     expect(t.sidecar('x_1.png').id).toBe(a)
   })
 
@@ -291,21 +293,49 @@ describe('review', () => {
   })
 })
 
-describe('production records', () => {
-  it('are immutable except for appended notes', async () => {
+describe('provenance (ADR-070)', () => {
+  it('is the asset\'s own information: set, corrected and cleared like a tag', async () => {
     const t = await lib()
     const inp = await up(t, 'in.png', 'in')
-    const rec = await t.svc.createRecord({ method: 'manual', tool: 'Blender 4.2', prompt: 'p', inputs: [{ id: inp }] }, ctx)
-    expect(rec.id).toMatch(/^rec_/)
-    expect(rec.inputs).toEqual([{ id: inp, hash: t.row(inp)!.hash }])
-    await t.svc.addRecordNote(rec.id, '第一条', ctx)
-    const r = await t.svc.addRecordNote(rec.id, '第二条', agent)
-    expect(r.record.notes?.map(n => [n.text, n.by])).toEqual([['第一条', 'user:tester'], ['第二条', 'agent:bot']])
-    const { notes, ...rest } = r.record
-    void notes
-    expect(rest).toEqual(rec)
-    await expect(t.svc.addRecordNote(rec.id, '  ', ctx)).rejects.toMatchObject({ code: 'validation_failed' })
-    await expect(t.svc.createRecord({ method: 'manual', inputs: [{ id: '0192f3a7-0000-7000-8000-000000000000' }] }, ctx)).rejects.toMatchObject({ code: 'validation_failed' })
+    const id = await up(t, 'out.png', 'out')
+    await t.svc.patch(id, { provenance: { method: 'manual', tool: 'Blender 4.2', prompt: 'test' } }, ctx)
+    expect(t.sidecar('out.png').provenance).toMatchObject({ method: 'manual', tool: 'Blender 4.2', prompt: 'test', by: 'user:tester' })
+    // a wrong prompt is corrected in place: nothing of the old one stays
+    await t.svc.apply({ items: [{ id, provenance: { method: 'manual', tool: 'Blender 4.2', prompt: '木箱', note: '修正提示词' }, relations: { add: [{ type: 'source', to: inp, role: 'reference' }] } }] }, agent)
+    const m = t.sidecar('out.png')
+    expect(m.provenance).toMatchObject({ prompt: '木箱', note: '修正提示词', by: 'agent:bot' })
+    expect(m.relations).toEqual([{ type: 'source', to: inp, toHash: t.row(inp)!.hash, role: 'reference' }])
+    expect(fs.readFileSync(t.abs('out.png.bmeta'), 'utf8')).not.toContain('"prompt": "test"')
+    expect((await t.svc.get(id, ctx)).provenance?.prompt).toBe('木箱')
+    expect((await t.svc.lineage(id, { direction: 'up', types: ['source', 'reference'], depth: 5 })).provenance[id]?.prompt).toBe('木箱')
+    await t.svc.patch(id, { provenance: null }, ctx)
+    expect(t.sidecar('out.png').provenance).toBeUndefined()
+    expect(fs.existsSync(t.abs('.bowerbird/records'))).toBe(false)
+  })
+
+  it('converts the records of an older library into provenance and sets the records folder aside', async () => {
+    const t = await lib()
+    const inp = await up(t, 'in.png', 'in')
+    const a = await up(t, 'a.png', 'a')
+    const b = await up(t, 'b.png', 'b')
+    await t.keep('in.png', 'a.png', 'b.png')
+    const rec = {
+      bb: 1, id: 'rec_0192f3a7-0000-7000-8000-000000000001', method: 'slice', tool: 'cutter', prompt: '切图',
+      params: { rect: { [a]: [0, 0, 8, 8], [b]: [8, 0, 8, 8] } }, inputs: [{ id: inp, hash: t.row(inp)!.hash, role: 'atlas' }],
+      by: 'agent:old', at: '2026-11-01T00:00:00.000Z', notes: [{ at: '2026-11-02T00:00:00.000Z', by: 'user:lin', text: '跨格了' }]
+    }
+    fs.mkdirSync(t.abs('.bowerbird/records/2026'), { recursive: true })
+    fs.writeFileSync(t.abs(`.bowerbird/records/2026/${rec.id}.json`), JSON.stringify(rec))
+    for (const p of ['a.png', 'b.png']) t.setSidecar(p, { ...t.sidecar(p), origin: rec.id, relations: [{ type: 'source', to: inp, toHash: t.row(inp)!.hash, record: rec.id }] })
+    await t.scan()
+    const ma = t.sidecar('a.png') as Record<string, unknown>
+    expect(ma.origin).toBeUndefined()
+    expect(t.sidecar('a.png').provenance).toMatchObject({ method: 'slice', tool: 'cutter', prompt: '切图', params: { rect: [0, 0, 8, 8] }, by: 'agent:old', note: '跨格了', batch: `bat_${rec.id.slice(4)}` })
+    expect(t.sidecar('b.png').provenance?.params).toEqual({ rect: [8, 0, 8, 8] })
+    expect(t.sidecar('a.png').relations).toEqual([{ type: 'source', to: inp, toHash: t.row(inp)!.hash, role: 'atlas' }])
+    expect(fs.existsSync(t.abs('.bowerbird/records'))).toBe(false)
+    expect(fs.readdirSync(t.abs('.bowerbird')).some(n => n.startsWith('records-converted-'))).toBe(true)
+    expect(t.row(a)!.method).toBe('slice')
   })
 })
 

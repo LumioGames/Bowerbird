@@ -10,9 +10,12 @@ async function lib(o?: Parameters<typeof makeLib>[0]): Promise<TestLib> { const 
 afterEach(async () => { vi.restoreAllMocks(); for (const t of libs) await t.close(); libs = []; cleanupTmp() })
 
 const bytes = (s: string) => new Uint8Array(Buffer.from(s))
+/** Upload a file and give it some information, so it has its .bmeta (ADR-067). */
 async function up(t: TestLib, p: string, content = p) {
   const i = p.lastIndexOf('/')
-  return (await t.svc.register({ fields: { folder: i < 0 ? '' : p.slice(0, i) }, file: { name: p.slice(i + 1), data: bytes(content) } }, ctx)).asset!.id
+  const id = (await t.svc.register({ fields: { folder: i < 0 ? '' : p.slice(0, i) }, file: { name: p.slice(i + 1), data: bytes(content) } }, ctx)).asset!.id
+  await t.keep(p)
+  return id
 }
 const raw = (t: TestLib, rel: string) => fs.readFileSync(t.abs(rel + '.bmeta'), 'utf8')
 /** An outside edit: same asset, a tag added, written in another tool's formatting. */
@@ -43,7 +46,7 @@ describe('2. kernel-reserved field namespaces', () => {
       await expect(t.svc.patch(id, { fields: { [ns]: { x: 1 } } }, ctx)).rejects.toMatchObject({ code: 'validation_failed' })
     }
     await t.svc.patch(id, { fields: { 'studio.prop': { rarity: 'rare' } } }, ctx)
-    expect(t.sidecar('a.png').fields).toEqual({ 'studio.prop': { rarity: 'rare' } })
+    expect(t.sidecar('a.png').fields?.['studio.prop']).toEqual({ rarity: 'rare' })
   })
 })
 
@@ -124,6 +127,7 @@ describe('3. ADR-046 on every write path', () => {
 
     t.write('x.png', 'x')
     await t.scan()
+    await t.keep('x.png')
     t.cp('x.png', 'x (1).png'); t.cp('x.png.bmeta', 'x (1).png.bmeta')
     await t.scan()
     editOutside(t, 'x.png', 'outside-x')
@@ -231,8 +235,8 @@ describe('7. version store folders and conflicts', () => {
     t.write('vcs-data/objects/ab', 'packed')
     t.write('art/a.png', 'a')
     await t.scan()
-    expect(t.exists('vcs-data/objects/ab.bmeta')).toBe(false)
-    expect(t.exists('art/a.png.bmeta')).toBe(true)
+    expect(t.rowByPath('vcs-data/objects/ab')).toBeUndefined()
+    expect(t.rowByPath('art/a.png')).toBeDefined()
     const issue = t.issues().find(i => i.id === 'plugin-missing:version-store')!
     expect(issue).toBeDefined()
     expect(JSON.parse(issue.details_json)).toMatchObject({ kind: 'version-store-conflict', used: '测试版本', conflicts: ['community.git'] })

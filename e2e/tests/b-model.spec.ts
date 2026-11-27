@@ -221,7 +221,7 @@ test('动作播放：时间轴前进、画面在动，暂停后停住', async ({
   expect(await time.inputValue()).toBe(v)
 })
 
-test('截图另存为图片资产：生产记录方式 render、来源指向模型', async ({ page }) => {
+test('截图另存为图片资产：出处方式 render、来源指向模型（角色 模型）', async ({ page }) => {
   const glb = await idOf(bb, 'props/chest/chest.glb')
   await openModel(page, 'props/chest/chest.glb')
   await pane(page).getByRole('button', { name: '出图' }).click()
@@ -238,9 +238,9 @@ test('截图另存为图片资产：生产记录方式 render、来源指向模�
   await expect(t).toBeVisible()
   const id = await idOf(bb, 'props/chest/chest_shot_e2e.png')
   const a = await bb.api.assets.get(bb.lib, id)
-  expect(a.record?.method).toBe('render')
-  expect(a.record?.tool).toBe('Bowerbird 模型查看器')
-  expect(a.relations.outgoing.some(r => r.type === 'source' && r.to === glb)).toBe(true)
+  expect(a.provenance?.method).toBe('render')
+  expect(a.provenance?.tool).toBe('Bowerbird 模型查看器')
+  expect(a.relations.outgoing.find(r => r.type === 'source' && r.to === glb)?.role).toBe('模型')
   expect(a.tech.width).toBe(512)
   await t.getByRole('button', { name: '查看' }).click()
   await expect(page.locator('.w2-dh b')).toHaveText('chest_shot_e2e.png')

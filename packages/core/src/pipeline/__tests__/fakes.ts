@@ -16,8 +16,7 @@ export class FakeDeps implements PipelineDeps {
   probes: Array<{ id: string; plugin: string; probe: ProbeResult }> = []
   thumbs: Array<{ id: string; stored: Partial<Record<ThumbVariant, StoredThumb>>; aspect: number | null }> = []
   checks: Array<{ id: string; checks: CheckView[] }> = []
-  registered: Array<{ req: RegisterRequest; ctx: { actor: string; pluginId: string; pluginVersion: string; recordId?: string } }> = []
-  records = 0
+  registered: Array<{ req: RegisterRequest; ctx: import('../../contracts.js').PluginRegisterContext }> = []
   constructor(readonly db: IndexDb, readonly contents: Map<string, string> = new Map()) {}
 
   private row(id: string): { path: string; name: string; ext: string; hash: string; stage: string; size: number } | undefined {
@@ -77,12 +76,11 @@ export class FakeDeps implements PipelineDeps {
     this.processing.push({ id, ...state })
   }
   async pipelineIssue(id: Guid, stage: PipelineStage, error: string | null): Promise<void> { this.issues.push({ id, stage, error }) }
-  async register(req: RegisterRequest, ctx: { actor: string; pluginId: string; pluginVersion: string; recordId?: string }) {
+  async register(req: RegisterRequest, ctx: import('../../contracts.js').PluginRegisterContext) {
     this.registered.push({ req, ctx })
-    const recordId = ctx.recordId ?? (typeof req.record === 'string' ? req.record : req.record ? `rec_${++this.records}` : null)
-    const id = seedAsset(this.db, { path: `out/${req.name ?? (req.file.kind === 'bytes' ? req.file.name : 'out.bin')}`, origin: recordId })
+    const id = seedAsset(this.db, { path: `out/${req.name ?? (req.file.kind === 'bytes' ? req.file.name : 'out.bin')}`, batch: ctx.batch ?? null })
     const info = { id, name: req.name ?? 'out', path: 'out' } as never
-    return { info, recordId }
+    return { info }
   }
 
   fns(id?: string): string[] { return this.calls.filter(c => !id || c.id === id).map(c => c.fn) }

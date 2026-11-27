@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  serializeBmeta, serializeFolderMeta, serializeRecord, serializeJson, Bmeta, FolderMeta, LibraryJson, TagsJson,
+  serializeBmeta, serializeFolderMeta, serializeJson, Bmeta, FolderMeta, LibraryJson, TagsJson,
   ProductionRecord, TrashInfo, SmartViewFile
 } from '@bowerbird/schema'
 import { loadPrototype, artSvg } from './lib/proto.mjs'
@@ -192,7 +192,7 @@ function unknown(a) {
   throw new Error('no file for ' + a.path)
 }
 
-/* ───────────── records (data.js RECS) ───────────── */
+/* ───────────── how assets were made (data.js RECS → provenance, ADR-070) ───────────── */
 
 const METHOD = { 'AI 生成': 'ai-generate', '手工': 'manual', '导出': 'export', '渲染': 'render', '切图': 'slice' }
 /** data.js params strings, split into keys (model / seed / negativePrompt are the conventional ones). */
@@ -290,7 +290,7 @@ function bmetaFor(a, extra = {}) {
     } : undefined,
     relations: undefined, review, versions,
     views: a.grid ? { rows: a.grid.rows, cols: a.grid.cols, cells: a.grid.cells.slice() } : undefined,
-    origin: undefined, created, modified, ...extra
+    provenance: undefined, created, modified, ...extra
   }
   return m
 }
@@ -302,7 +302,7 @@ function relationsFor(a) {
       const to = D.byId(e.to)
       // chest_icon.png was rendered from chest.glb v1; chest.glb changed since → stale upstream (R12)
       const toHash = a.path === 'props/chest/chest_icon.png' ? bmetas.get(to.path).versions[0].hash : hashes.get(to.path)
-      out.push({ type: 'source', to: to.id, toHash, record: recIds.get(e.rec) })
+      out.push({ type: 'source', to: to.id, toHash, ...(e.rec && INPUT_ROLE[e.rec] ? { role: INPUT_ROLE[e.rec] } : {}) })
     } else if (e.type === 'uses') {
       // the potion's base colour is in the trash: the relation keeps the trashed GUID (broken reference, R11)
       const to = e.to ? D.byId(e.to).id : TRASH.find(t => t.name === e.toName).id
@@ -327,13 +327,29 @@ async function main() {
   buildRecords()
   const recOf = new Map()
   for (const e of D.EDGES) if (e.type === 'source' && e.rec) recOf.set(e.from, recIds.get(e.rec))
+  const recById = new Map(records.map(r => [r.id, r]))
+  const outputs = new Map()
+  for (const a of D.assets) {
+    const rid = recOf.get(a.id) ?? (a.origin ? recIds.get(a.origin) : undefined)
+    if (rid) outputs.set(rid, (outputs.get(rid) ?? 0) + 1)
+  }
   for (const a of D.assets) {
     if (a.path === 'ui/shop/btn_buy (1).png') continue
     const m = bmetas.get(a.path)
     m.relations = relationsFor(a)
-    // ADR-027: an asset records the production record that made it (also when it has no input, e.g. lantern_concept)
-    const origin = recOf.get(a.id) ?? (a.origin ? recIds.get(a.origin) : undefined)
-    if (origin) m.origin = origin
+    // ADR-070: how it was made is the asset's own information (also without inputs, e.g. lantern_concept); the
+    // outputs of one run share a batch id; a slice keeps only its own rect (ADR-036)
+    const rid = recOf.get(a.id) ?? (a.origin ? recIds.get(a.origin) : undefined)
+    const r = rid ? recById.get(rid) : undefined
+    if (r) {
+      let params = r.params ? { ...r.params } : undefined
+      if (params?.rect && typeof params.rect === 'object' && !Array.isArray(params.rect)) params.rect = params.rect[a.id]
+      if (params && params.rect === undefined) delete params.rect
+      m.provenance = {
+        method: r.method, tool: r.tool, prompt: r.prompt, params: params && Object.keys(params).length ? params : undefined,
+        batch: (outputs.get(rid) ?? 0) > 1 ? 'bat_' + rid.slice(4) : undefined, by: r.by, at: r.at
+      }
+    }
   }
   // duplicate identity (R9): the copy was made together with its .bmeta — same GUID, same content
   bmetas.set('ui/shop/btn_buy (1).png', structuredClone(bmetas.get('ui/shop/btn_buy.png')))
@@ -355,8 +371,6 @@ async function main() {
   sp.modified = { at: iso(Date.UTC(2026, 10, 24, 2, 30)), by: 'user:lin' }
   writeFile(path.join(OUT, "ui/shop/shop_prototype.html (lin's conflicted copy 2026-11-24).bmeta"), serializeBmeta(Bmeta.parse(sp)))
 
-  // production records
-  for (const r of records) writeFile(path.join(OUT, '.bowerbird/records', r.at.slice(0, 4), r.id + '.json'), serializeRecord(r))
 
   writeFolders()
   writeLibraryData()

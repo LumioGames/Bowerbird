@@ -34,8 +34,8 @@ test('正常：从左到右的生产链、上游追到顶、设计对象在上�
   expect(xs[0]! < xs[1]! && xs[1]! < xs[2]! && xs[2]! < cx && cx < xs[3]!).toBe(true)
   // the design object sits above the centre
   expect((await node(page, 'chest.md').boundingBox())!.y).toBeLessThan((await page.locator('.w2-gn--center').boundingBox())!.y)
-  // the origin record of the chain's top (AI 生成) — it arrives after the lineage, and the graph is fitted again so
-  // the whole chain is in view (graph.js fit, as the prototype's 60 %)
+  // how the chain's top was made (its provenance, AI 生成) sits before it, and the whole chain is in view
+  // (graph.js fit, as the prototype's 60 %)
   await expect(page.locator('.w2-gn--rec')).toContainText('AI 生成')
   await expect.poll(async () => {
     const g = (await graph(page).boundingBox())!, r = (await page.locator('.w2-gn--rec').boundingBox())!
@@ -44,14 +44,14 @@ test('正常：从左到右的生产链、上游追到顶、设计对象在上�
   // under a used texture: what it is for (graph.js shows the note); the centre shows version · note · day and time
   await expect(node(page, 'chest_basecolor.png').locator('.w2-gn__sub')).toHaveText('基础色')
   await expect(page.locator('.w2-gn--center .w2-gn__sub')).toHaveText(/^v2 · 修正包边比例 · \d+ 日 \d\d:\d\d$/)
-  await expect(graph(page).locator('.w2-rg__legend')).toHaveText(/来源\s*引用\s*归属\s*上游已更新\s*断链/)
+  await expect(graph(page).locator('.w2-rg__legend')).toHaveText(/来源\s*参考\s*引用\s*归属\s*上游已更新\s*断链/)
   // stale upstream mark on chest.glb → chest_icon.png
   await expect(graph(page).getByRole('button', { name: '上游已更新' })).toBeVisible()
   await expect(graph(page).getByRole('group', { name: '版本' })).toHaveCount(0)
   await expect(graph(page).getByRole('button', { name: '建立关系…' })).toBeVisible()
 })
 
-test('节点分组：同一条生产记录的下游多于 4 个折叠成一组，可展开、收起', async ({ page }) => {
+test('节点分组：同一批产出（出处的批次相同）的下游多于 4 个折叠成一组，可展开、收起', async ({ page }) => {
   await openDetail(page, bb, 'ui/shop/shop_mockup.png', 'rel')
   const group = page.locator('.w2-gn--group').filter({ hasText: /切图 · \d+/ })
   await expect(group).toBeVisible()
@@ -74,26 +74,26 @@ test('节点分组：设计对象的归属资产多于 6 个折叠成「归属�
   await expect(page.locator('.w2-gn--frame')).toContainText('chest.glb')
 })
 
-test('生产记录面板：方式、工具、插件、执行者、参数、提示词、输入与角色', async ({ page }) => {
+test('出处面板：方式、工具、插件、执行者、参数、提示词、输入与角色', async ({ page }) => {
   await openDetail(page, bb, 'props/chest/chest_turnaround.png', 'rel')
-  // the source edge turnaround → concept carries the record (AI 生成, input role 参考图)
+  // the source edge turnaround → concept: the turnaround's provenance (AI 生成) and the relation's role 参考图
   const turn = await idOf(bb, 'props/chest/chest_turnaround.png'), concept = await idOf(bb, 'props/chest/chest_concept.png')
   await clickEdge(page, `source|${turn}|${concept}|`)
   const p = panel(page)
   await expect(p).toContainText('来源')
   await expect(p).toContainText('chest_turnaround.png 由 chest_concept.png 产出')
   await expect(p).toContainText('当时版本')
-  await expect(p).toContainText('生产记录')
+  await expect(p).toContainText('出处')
   await expect(p).toContainText('AI 生成')
   await expect(p).toContainText('turnaround-gen')
   await expect(p).toContainText('agent:concept-artist')
   await expect(p).toContainText('提示词')
   await expect(p).toContainText('参考图')
-  // the origin record node at the top of the chain: fit() keeps the centre at 62 % (graph.js), so pan right first
+  // the provenance node at the top of the chain: fit() keeps the centre at 62 % (graph.js), so pan right first
   await p.getByRole('button', { name: '关闭' }).click()
   await panRight(page, 400)
   await page.locator('.w2-gn--rec').click()
-  await expect(panel(page)).toContainText('生产记录')
+  await expect(panel(page)).toContainText('出处')
   await expect(panel(page)).toContainText('concept-gen')
 })
 
@@ -211,7 +211,9 @@ test('拖出连线建立关系；会形成循环的来源被阻止', async ({ pa
   // chest_concept.png already is the top of chest.glb's chain: chest_concept 由 chest.glb 产出 would be a cycle
   await drag('chest_concept.png', 'chest_icon.png')
   let menu = page.getByRole('menu').last()
-  await expect(menu.getByRole('menuitem')).toHaveCount(4)
+  // 来源 / 参考 / 引用 / 归属 / 对调方向
+  await expect(menu.getByRole('menuitem')).toHaveCount(5)
+  await expect(menu.getByRole('menuitem', { name: /chest_concept\.png 参考 chest_icon\.png/ })).not.toHaveAttribute('aria-disabled', 'true')
   const cyc = menu.getByRole('menuitem', { name: /chest_concept\.png 由 chest_icon\.png 产出/ })
   await expect(cyc).toContainText('会形成循环')
   await expect(cyc).toHaveAttribute('aria-disabled', 'true')
@@ -225,6 +227,41 @@ test('拖出连线建立关系；会形成循环的来源被阻止', async ({ pa
   await menu.getByRole('menuitem', { name: '对调方向' }).click()
   await expect(page.getByRole('menu').last().getByRole('menuitem').first()).toContainText('chest_orm.png 由 chest_normal.png 产出')
   await page.keyboard.press('Escape')
+})
+
+test('建立参考关系：一次写下关系（带角色）和出处；画成虚线、在上游一侧，对方变了也不提醒（ADR-073）；撤销都放回去', async ({ page }) => {
+  await openDetail(page, bb, 'props/chest/chest_icon.png', 'rel')
+  const icon = await idOf(bb, 'props/chest/chest_icon.png'), other = await idOf(bb, 'props/chest/chest_basecolor_dark.png')
+  const otherName = 'chest_basecolor_dark.png'
+  const before = await bb.api.assets.get(bb.lib, icon)
+  await graph(page).getByRole('button', { name: '建立关系…' }).click()
+  const d = dialog(page)
+  await d.getByRole('radio', { name: /^参考/ }).click()
+  await d.getByRole('button', { name: '选择资产…' }).click()
+  const pick = dialog(page)
+  await pick.getByRole('textbox', { name: '搜索' }).fill('basecolor_dark')
+  await pick.getByRole('radio').filter({ hasText: otherName }).first().click()
+  await pick.getByRole('button', { name: '选择' }).click()
+  await expect(d).toContainText(`chest_icon.png 参考 ${otherName}`)
+  await d.getByRole('textbox', { name: '角色' }).fill('参考图')
+  await d.getByRole('textbox', { name: '备注' }).fill('照着摆的角度')
+  await d.getByRole('button', { name: '建立关系' }).click()
+  const made = toast(page, `已建立：chest_icon.png 参考 ${otherName}`)
+  await expect(made).toBeVisible()
+
+  const a = await bb.api.assets.get(bb.lib, icon)
+  expect(a.relations.outgoing.find(r => r.type === 'reference' && r.to === other)).toMatchObject({ role: '参考图', stale: false })
+  expect(a.provenance?.note).toBe('照着摆的角度')
+  // drawn on the upstream side, dashed, in the legend
+  const edge = page.locator(`g[data-edge="reference|${icon}|${other}|"]`)
+  await expect(edge).toHaveClass(/w2-ge--reference/)
+  expect((await node(page, otherName).boundingBox())!.x).toBeLessThan((await page.locator('.w2-gn--center').boundingBox())!.x)
+  await expect(graph(page).locator('.w2-rg__legend')).toContainText('参考')
+
+  // undo takes the relation away and puts the provenance back
+  await made.getByRole('button', { name: '撤销' }).click()
+  await expect.poll(async () => (await bb.api.assets.get(bb.lib, icon)).relations.outgoing.some(r => r.type === 'reference')).toBe(false)
+  expect((await bb.api.assets.get(bb.lib, icon)).provenance?.note ?? null).toBe(before.provenance?.note ?? null)
 })
 
 test('选两个节点对比：选择条「已选 2 个」→「对比」进入对比页', async ({ page }) => {

@@ -62,6 +62,52 @@ function hasUserFiles(root: string): boolean {
   return names.some(n => !n.startsWith('.') && n !== 'Thumbs.db' && n !== 'desktop.ini')
 }
 
+/** Whether a process is still running (a lock or server file left by a crashed one must not hold anything). */
+export function processAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+/** Locks this process holds, with how many open hubs use each (one process may open a library more than once). */
+const heldLocks = new Map<string, number>()
+
+/**
+ * One writer per library (ADR-069): a running server, or a command that opened the library itself while no server
+ * runs. `<data dir>/writer.lock` names the process. It is created exclusively, so two processes starting at the same
+ * moment cannot both take it; a lock whose process is gone is taken over.
+ */
+function takeWriterLock(dataDir: string, root: string): () => void {
+  const file = path.join(dataDir, 'writer.lock')
+  if (!heldLocks.has(file)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.writeFileSync(file, serializeJson({ pid: process.pid, at: new Date().toISOString() }), { flag: 'wx' })
+        break
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 2) throw e
+        const held = readJson(file) as { pid?: number } | null
+        if (held?.pid === process.pid) break
+        if (held?.pid && processAlive(held.pid)) {
+          throw new CoreError('conflict', `资产库正被另一个 Bowerbird 进程使用（进程 ${held.pid}）：${root}`, { pid: held.pid, root })
+        }
+        // left behind by a process that is gone (or half written): take it over
+        try { fs.rmSync(file, { force: true }) } catch { /* raced with another taker: try again */ }
+      }
+    }
+  }
+  heldLocks.set(file, (heldLocks.get(file) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const n = (heldLocks.get(file) ?? 1) - 1
+    if (n > 0) { heldLocks.set(file, n); return }
+    heldLocks.delete(file)
+    const now = readJson(file) as { pid?: number } | null
+    if (now?.pid === process.pid) { try { fs.rmSync(file, { force: true }) } catch { /* ignore */ } }
+  }
+}
+
 /** Machine settings that only take effect when Bowerbird starts. */
 const RESTART_KEYS = ['host', 'port', 'cacheDirs', 'concurrency'] as const
 
@@ -257,8 +303,21 @@ export class HubImpl implements Hub {
       tmpDir: path.join(this.home, 'tmp')
     }
     fs.mkdirSync(dataDir, { recursive: true })
+    const release = takeWriterLock(dataDir, root)
+    try {
+      const svc = await this.openService(entry, paths)
+      this.locks.push(release)
+      return svc
+    } catch (e) {
+      release()
+      throw e
+    }
+  }
+
+  private async openService(entry: { id: string; root: string; name?: string }, paths: LibraryPaths): Promise<LibraryServiceImpl> {
     const { db, rebuilt } = openIndexDb(paths.indexPath)
     return openLibraryService({
+      ...(this.opts.processing === false ? { processing: false } : {}),
       id: entry.id, ...(entry.name ? { name: entry.name } : {}), paths, db, rebuilt, events: this.events,
       log: this.log.child(`library`), pluginHost: this.plugins,
       createQueryEngine: this.f.createQueryEngine, createPipeline: this.f.createPipeline,
@@ -288,11 +347,14 @@ export class HubImpl implements Hub {
     return { status, libraries: libs }
   }
 
+  private readonly locks: Array<() => void> = []
+
   async close(): Promise<void> {
     for (const p of this.open.values()) {
       try { await (await p).close() } catch { /* ignore */ }
     }
     this.open.clear()
+    for (const release of this.locks.splice(0)) release()
     try { await this.plugins.close() } catch { /* ignore */ }
   }
 }

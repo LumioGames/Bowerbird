@@ -406,7 +406,7 @@ test.describe('只用键盘的对话框（并跑 axe）', () => {
     await bb.stop()
     bb = await startBowerbird({ library: 'first-open' })
     await page.goto(bb.url)
-    const d = page.getByRole('dialog').filter({ hasText: '每个文件旁边会多一个同名的 .bmeta' })
+    const d = page.getByRole('dialog').filter({ hasText: '它旁边才会多一个同名的 .bmeta' })
     await expect(d).toBeVisible()
     await noAxe(page, DIALOG)
     await tabThrough(page, d)

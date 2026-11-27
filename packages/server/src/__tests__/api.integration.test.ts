@@ -105,9 +105,9 @@ describe.skipIf(!READY)('HTTP API over the real kernel', () => {
   it('uploads, then answers conflict / keep-both / skip for the same name', async () => {
     const pre = await api.assets.precheck(libA, { folder: 'props', names: ['chest.png'] })
     expect(pre.conflicts).toEqual([])
-    const r = await api.assets.register(libA, { folder: 'props', tags: ['宝箱'], stage: 'production', record: { method: 'ai-generate', prompt: '红色的卡通宝箱', params: { seed: 7 } } }, { data: PNG, name: 'chest.png', type: 'image/png' })
+    const r = await api.assets.register(libA, { folder: 'props', tags: ['宝箱'], stage: 'production', provenance: { method: 'ai-generate', prompt: '红色的卡通宝箱', params: { seed: 7 } } }, { data: PNG, name: 'chest.png', type: 'image/png' })
     expect(r.asset!.path).toBe('props/chest.png')
-    expect(r.recordId).toMatch(/^rec_/)
+    expect(r.asset!.provenance).toMatchObject({ method: 'ai-generate', prompt: '红色的卡通宝箱', params: { seed: 7 } })
     chestId = r.asset!.id
     expect(fs.existsSync(path.join(rootA, 'props', 'chest.png.bmeta'))).toBe(true)
     const pre2 = await api.assets.precheck(libA, { folder: 'props', names: ['chest.png'] })
@@ -121,8 +121,8 @@ describe.skipIf(!READY)('HTTP API over the real kernel', () => {
 
   it('registers with a source relation and traces lineage', async () => {
     const r = await agent.assets.register(libA, {
-      folder: 'props', tags: ['宝箱', '盖子'], relations: [{ type: 'source', to: chestId }],
-      record: { method: 'slice', inputs: [{ id: chestId, role: 'reference' }], params: { rect: [0, 0, 1, 1] } }
+      folder: 'props', tags: ['宝箱', '盖子'], relations: [{ type: 'source', to: chestId, role: 'reference' }],
+      provenance: { method: 'slice', params: { rect: [0, 0, 1, 1] } }
     }, { data: PNG, name: 'lid.png' })
     lidId = r.asset!.id
     expect(r.newTags.map(t => t.tag)).toContain('盖子')
@@ -130,8 +130,15 @@ describe.skipIf(!READY)('HTTP API over the real kernel', () => {
     const up = await api.assets.lineage(libA, lidId, { direction: 'up' })
     expect(up.nodes.map(n => n.id)).toEqual(expect.arrayContaining([chestId, lidId]))
     expect(up.edges.find(e => e.from === lidId && e.to === chestId)!.type).toBe('source')
+    expect(up.edges.find(e => e.from === lidId && e.to === chestId)!.role).toBe('reference')
+    expect(up.provenance[lidId]).toMatchObject({ method: 'slice', by: 'agent:modeler' })
     const down = await api.assets.lineage(libA, chestId, { direction: 'down' })
     expect(down.nodes.map(n => n.id)).toContain(lidId)
+    // saying the same thing again writes nothing (ADR-068)
+    const before = fs.readFileSync(path.join(rootA, 'props', 'lid.png.bmeta'), 'utf8')
+    const again = await agent.assets.apply(libA, { items: [{ id: lidId, tags: { add: ['盖子'] }, provenance: { method: 'slice', params: { rect: [0, 0, 1, 1] } } }] })
+    expect(again.results[0]).toMatchObject({ changed: false, changes: [] })
+    expect(fs.readFileSync(path.join(rootA, 'props', 'lid.png.bmeta'), 'utf8')).toBe(before)
   })
 
   it('searches with the text syntax and patches tags', async () => {
@@ -243,7 +250,8 @@ describe.skipIf(!READY)('HTTP API over the real kernel', () => {
     await expect(api.search(libA, { limit: 0 } as never)).rejects.toMatchObject({ status: 400, code: 'validation_failed' })
     await expect(api.assets.get(libA, '01936b2a-0000-7000-8000-0000000000ff')).rejects.toMatchObject({ status: 404, code: 'not_found' })
     await expect(api.libraries.get('no-such-library')).rejects.toMatchObject({ status: 404 })
-    await expect(api.records.get(libA, 'rec_nope')).rejects.toMatchObject({ status: 404 })
+    await expect(api.assets.untrack(libA, '01936b2a-0000-7000-8000-0000000000ff')).rejects.toMatchObject({ status: 404, code: 'not_found' })
+    await expect(api.assets.apply(libA, { items: [] })).rejects.toMatchObject({ status: 400, code: 'validation_failed' })
   })
 
   it('vocabulary, folders, tags, issues, jobs, creators answer with schema shapes', async () => {

@@ -13,7 +13,7 @@ export const fakeApi = {
   plugins: { list: fn(), install: fn(), update: fn(), enable: fn(), disable: fn(), machineSettings: fn(), putMachineSettings: fn(), librarySettings: fn(), putLibrarySettings: fn(), webUrl: (id: string) => `/api/v1/plugins/${id}/web` },
   search: fn(),
   assets: {
-    get: fn(), review: fn(), versions: fn(), lineage: fn(), restoreVersion: fn(), replaceContent: fn(), acceptTags: fn(), dismissTags: fn(), remove: fn(), batch: fn(),
+    get: fn(), review: fn(), versions: fn(), lineage: fn(), restoreVersion: fn(), replaceContent: fn(), acceptTags: fn(), dismissTags: fn(), remove: fn(), batch: fn(), patch: fn(), apply: fn(), untrack: fn(),
     fileUrl: (l: string, id: string, d = false) => `/api/v1/libraries/${l}/assets/${id}/file${d ? '?download=1' : ''}`,
     versionFileUrl: (l: string, id: string, h: string) => `/api/v1/libraries/${l}/assets/${id}/versions/${h}/file`,
     slotUrl: (l: string, id: string, s: string) => `/api/v1/libraries/${l}/assets/${id}/slots/${s}`,
@@ -21,7 +21,6 @@ export const fakeApi = {
     thumbnailUrl: (l: string, id: string) => `/api/v1/libraries/${l}/assets/${id}/thumbnail`
   },
   relations: { add: fn(), remove: fn(), replace: fn(), acknowledge: fn(), retarget: fn() },
-  records: { create: fn(), get: fn(), addNote: fn() },
   folders: { tree: fn() },
   tags: { list: fn(), patch: fn(), accept: fn(), dismiss: fn() },
   issues: { list: fn(), resolve: fn(), resolveMany: fn(), candidates: fn() },
@@ -55,8 +54,8 @@ export function detail(o: Partial<AssetDetail> & { id: string; name: string }): 
   return {
     ...s, hash: hash(o.id.slice(-4)), descriptionFull: null, auto: null, fields: {}, reviewVerdict: null,
     versions: [{ hash: hash(o.id.slice(-4)), size: s.size, at: '2026-11-24T08:00:00.000Z', by: 'user:lin' }],
-    views: null, thumbnailManual: false, origin: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
-    relations: { outgoing: [], incoming: [] }, issues: [], record: null, bundleFiles: null, targetSize: null, stages: [],
+    views: null, thumbnailManual: false, provenance: null, modifiedBy: null, tech: {}, analysis: {}, unresolvedRefs: [], checks: [],
+    relations: { outgoing: [], incoming: [] }, issues: [], bundleFiles: null, targetSize: null, stages: [],
     ...o
   } as AssetDetail
 }
@@ -66,7 +65,7 @@ export function relation(o: Partial<RelationView> & { type: string; from: string
 }
 
 export function lineage(center: string, nodes: AssetSummary[], edges: Lineage['edges'], o: Partial<Lineage> = {}): Lineage {
-  return { center, nodes, missing: [], edges, records: {}, ...o }
+  return { center, nodes, missing: [], edges, provenance: {}, ...o }
 }
 
 export function version(n: number, o: Partial<VersionView> = {}): VersionView {

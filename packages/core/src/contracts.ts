@@ -13,7 +13,7 @@ import type {
   AssetDetail, AssetPatch, AssetSummary, BatchRequest, BatchResponse, Bmeta, CacheResponse, CheckView, ConfigResponse,
   CopyResponse, CreatorInfo, EventType, EventPayload, ExportPlan, ExportRequest, FolderDefaults, FolderNode, Guid,
   Issue, IssueType, JobAction, JobInfo, JobsResponse, LibraryInfo, LibraryJson, LibraryRef, LibrarySettings, Lineage,
-  LineageQuery, MachineConfig, OnConflict, PipelineStage, PluginInfo, PrecheckResponse, ProductionRecord, RecordInput,
+  LineageQuery, MachineConfig, OnConflict, PipelineStage, PluginInfo, PrecheckResponse, ApplyRequest, ApplyResponse, UntrackResponse,
   RegisterFields, RegisterResponse, RelationInput, RenderTask, RetargetResponse, ReviewStatus, SearchRequest,
   SearchResponse, SmartView, Stage, SummaryResponse, TagEdit, TagInfo, ThumbVariant, TrashItem, VersionsResponse,
   ViewGrid, Vocabulary, CacheCleanResponse, RelocateCandidates, FormatContribution, RelationTypeContribution,
@@ -96,8 +96,6 @@ export interface LibraryFs {
   writeSidecar(assetPath: string, meta: Bmeta): Promise<void>
   readFolderMeta(folder: string): Promise<import('@bowerbird/schema').FolderMeta | null>
   writeFolderMeta(folder: string, meta: import('@bowerbird/schema').FolderMeta | null): Promise<void>
-  readRecord(id: string): Promise<ProductionRecord | null>
-  writeRecord(rec: ProductionRecord): Promise<void>
   /** Stream SHA-256 of a file, or the directory fingerprint of a bundle. Returns `sha256:<hex>`. */
   hash(path: string): Promise<string>
   stat(path: string): Promise<{ size: number; mtimeMs: number; isDir: boolean } | null>
@@ -189,7 +187,7 @@ export interface LibraryHandle {
   /** Read-only library access for plugin contexts (implemented by core-A's service). */
   reader: import('@bowerbird/plugin-sdk').LibraryReader
   /** Registration channel for sources/actions/creators (ADR-016). */
-  register(req: RegisterRequest, ctx: { actor: string; pluginId: string; pluginVersion: string; recordId?: string }): Promise<{ info: AssetInfo; recordId: string | null }>
+  register(req: RegisterRequest, ctx: PluginRegisterContext): Promise<{ info: AssetInfo }>
   cache: { put(assetId: Guid, stage: PipelineStage, name: string, data: Uint8Array): Promise<string>; get(assetId: Guid, stage: PipelineStage, name: string): Promise<Uint8Array | null> }
 }
 
@@ -252,7 +250,20 @@ export interface PipelineDeps {
   /** Raise or clear the pipeline-failed issue. */
   pipelineIssue(id: Guid, stage: PipelineStage, error: string | null): Promise<void>
   /** Kernel registration for creator outputs (same channel as POST /assets). */
-  register(req: RegisterRequest, ctx: { actor: string; pluginId: string; pluginVersion: string; recordId?: string }): Promise<{ info: AssetInfo; recordId: string | null }>
+  register(req: RegisterRequest, ctx: PluginRegisterContext): Promise<{ info: AssetInfo }>
+}
+
+/**
+ * Who registers a plugin output, and the run it belongs to (ADR-070): every output of one run gets `batch`, and the
+ * run's `provenance` / `inputs` when the output does not say its own.
+ */
+export interface PluginRegisterContext {
+  actor: string
+  pluginId: string
+  pluginVersion: string
+  batch?: string
+  provenance?: import('@bowerbird/schema').ProvenanceInput
+  inputs?: Array<{ id: Guid; role: string }>
 }
 
 export interface StoredThumb { key: string; relPath: string; bytes: number }
@@ -316,6 +327,8 @@ export interface LibraryService {
   readonly paths: LibraryPaths
   info(ctx: CallContext): Promise<LibraryInfo>
   patchLibrary(patch: { name?: string; settings?: Partial<LibrarySettings> }, ctx: CallContext): Promise<LibraryInfo>
+  /** Resolves when the start-up scan is done (ADR-069: a command without a server waits for it). */
+  ready?(): Promise<void>
   /** First open of a folder with files: register everything (stoppable; resumes next time). */
   initialize(ctx: CallContext): Promise<void>
   rescan(path: string | undefined, ctx: CallContext): Promise<void>
@@ -326,6 +339,10 @@ export interface LibraryService {
   get(id: Guid, ctx: CallContext): Promise<AssetDetail>
   precheck(folder: string, names: string[]): Promise<PrecheckResponse>
   register(input: RegisterInput, ctx: CallContext): Promise<RegisterResponse>
+  /** Say what assets should have; only differences are written (ADR-068). */
+  apply(req: ApplyRequest, ctx: CallContext): Promise<ApplyResponse>
+  /** 移出资产库：the .bmeta goes to the trash, the file stays (ADR-067). */
+  untrack(id: Guid, ctx: CallContext): Promise<UntrackResponse>
   patch(id: Guid, patch: AssetPatch, ctx: CallContext): Promise<{ asset: AssetDetail; newTags: RegisterResponse['newTags'] }>
   trash(id: Guid, opts: { force: boolean }, ctx: CallContext): Promise<{ trashId: string; referrers: Guid[] }>
   replaceContent(id: Guid, file: { name: string; data: Uint8Array } | { name: string; tmpPath: string }, note: string | undefined, ctx: CallContext): Promise<AssetDetail>
@@ -356,9 +373,6 @@ export interface LibraryService {
   replaceRelation(id: Guid, rel: { type: string; to: Guid; slot?: string; newTo: Guid }, ctx: CallContext): Promise<AssetDetail>
   acknowledgeUpstream(id: Guid, to: Guid, ctx: CallContext): Promise<AssetDetail>
   retarget(req: { from: Guid; to: Guid; types?: string[]; dryRun: boolean }, ctx: CallContext): Promise<RetargetResponse>
-  createRecord(input: RecordInput, ctx: CallContext, plugin?: string): Promise<ProductionRecord>
-  record(id: string): Promise<{ record: ProductionRecord; outputs: AssetSummary[] }>
-  addRecordNote(id: string, text: string, ctx: CallContext): Promise<{ record: ProductionRecord; outputs: AssetSummary[] }>
 
   folders(): Promise<FolderNode>
   createFolder(path: string, ctx: CallContext): Promise<void>
@@ -427,6 +441,11 @@ export interface HubOptions {
   watch?: boolean
   /** Override machine config values for this process (CLI flags). */
   overrides?: Partial<MachineConfig>
+  /**
+   * Run the processing pipeline in the libraries this hub opens (default true). A command that opens the library
+   * itself because no server runs turns it off: thumbnails and probes wait for the next server (ADR-069).
+   */
+  processing?: boolean
 }
 
 export interface Hub {

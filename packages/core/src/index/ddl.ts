@@ -1,12 +1,12 @@
 /**
  * Index database schema (pipeline-and-cache.md「索引」). FROZEN CONTRACT between the core lines:
  * - library/scanner/service/integrity (line core-A) write assets, tags, relations, tech, analysis, probe, checks,
- *   issues, records, trash, files;
+ *   issues, trash, files;
  * - query/pipeline/plugins (line core-B) read those tables and own jobs and cache_files.
  * Everything here is rebuildable from the library folder. Bump INDEX_SCHEMA_VERSION to force a rebuild.
  * Columns may be added (never renamed or removed) by the owning line; readers must not depend on additions.
  */
-export const INDEX_SCHEMA_VERSION = 1
+export const INDEX_SCHEMA_VERSION = 2
 
 /** Bit flags in `assets.flags` (search.md「结果」flags). */
 export const FLAG = { stale: 1, broken: 2, missing: 4, processing: 8, failed: 16 } as const
@@ -43,13 +43,15 @@ CREATE TABLE IF NOT EXISTS assets (
   bundle          INTEGER NOT NULL DEFAULT 0,
   auxiliary       INTEGER NOT NULL DEFAULT 0,
   missing         INTEGER NOT NULL DEFAULT 0, -- file gone, sidecar kept (R7)
+  sidecar         INTEGER NOT NULL DEFAULT 1, -- 1 = has a .bmeta; 0 = the library only sees the file (ADR-067)
   created_at      TEXT NOT NULL,
   created_by      TEXT NOT NULL,
   modified_at     TEXT NOT NULL,              -- latest of created / modified / last version
+  modified_by     TEXT,                       -- who last changed its information (ADR-072); null without a .bmeta
   description     TEXT,
   auto_description TEXT,
-  origin          TEXT,                       -- production record that produced it
-  method          TEXT,                       -- method of that record (filter by method)
+  method          TEXT,                       -- provenance method (filter by method, ADR-070)
+  batch           TEXT,                       -- provenance batch: outputs of one run
   thumb_state     TEXT NOT NULL DEFAULT 'pending', -- ready | pending | render | none | failed
   thumb_key       TEXT,                       -- cache key of the current 'thumb'
   thumb_manual    INTEGER NOT NULL DEFAULT 0,
@@ -75,6 +77,8 @@ CREATE INDEX IF NOT EXISTS assets_stage    ON assets(stage);
 CREATE INDEX IF NOT EXISTS assets_review   ON assets(review);
 CREATE INDEX IF NOT EXISTS assets_size     ON assets(size);
 CREATE INDEX IF NOT EXISTS assets_by       ON assets(created_by);
+CREATE INDEX IF NOT EXISTS assets_modby    ON assets(modified_by);
+CREATE INDEX IF NOT EXISTS assets_batch    ON assets(batch);
 
 CREATE TABLE IF NOT EXISTS tags (
   asset_id TEXT NOT NULL,
@@ -90,7 +94,7 @@ CREATE TABLE IF NOT EXISTS relations (
   to_id    TEXT NOT NULL,
   slot     TEXT NOT NULL DEFAULT '',
   to_hash  TEXT,
-  record   TEXT,
+  role     TEXT,
   note     TEXT,
   broken   INTEGER NOT NULL DEFAULT 0,
   stale    INTEGER NOT NULL DEFAULT 0,
@@ -147,15 +151,6 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 CREATE INDEX IF NOT EXISTS issues_asset ON issues(asset_id);
 CREATE INDEX IF NOT EXISTS issues_type  ON issues(type);
-
-CREATE TABLE IF NOT EXISTS records (
-  id     TEXT PRIMARY KEY,
-  method TEXT NOT NULL,
-  by     TEXT NOT NULL,
-  at     TEXT NOT NULL,
-  prompt TEXT,
-  json   TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS trash (
   id            TEXT PRIMARY KEY,

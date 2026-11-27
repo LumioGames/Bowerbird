@@ -43,7 +43,7 @@ test('正常：查看器、阶段与位置、进度「1 / N」；上游；「另
   await page.keyboard.press('Escape')
 })
 
-test('自动检查（有才显示）+ 生产记录 + 上游（设计对象、与上游对比）', async ({ page }) => {
+test('自动检查（有才显示）+ 出处 + 上游（设计对象、与上游对比）', async ({ page }) => {
   await open(page, `?folder=props&start=${await idOf(bb, 'props/chest/chest.glb')}`)
   await expect(head(page)).toHaveText('chest.glb')
   await expect(page.locator('.w2-rq__checks')).toContainText('尺寸与设计对象')
@@ -54,11 +54,11 @@ test('自动检查（有才显示）+ 生产记录 + 上游（设计对象、与
   await expect(up).toContainText('设计对象')
   await up.getByRole('button', { name: '与上游对比' }).click()
   await expect(page).toHaveURL(new RegExp(`/compare\\?a=${await idOf(bb, 'props/chest/chest.glb')}&b=${await idOf(bb, 'props/chest/chest_turnaround.png')}`))
-  // an image without checks shows no check strip; its AI record is on the side
+  // an image without checks shows no check strip; its AI provenance is on the side
   await open(page, `?folder=props&start=${await idOf(bb, 'props/lantern/lantern_concept.png')}`)
   await expect(head(page)).toHaveText('lantern_concept.png')
   await expect(page.locator('.w2-rq__checks')).toHaveCount(0)
-  await expect(section(page, '生产记录')).toContainText('AI 生成')
+  await expect(section(page, '出处')).toContainText('AI 生成')
 })
 
 test('AI 标签采纳：单个采纳 / 去掉 / 全部采纳', async ({ page }) => {

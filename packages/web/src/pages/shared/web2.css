@@ -228,12 +228,14 @@
 .w2-ge__line { fill: none; stroke: var(--ink-2); stroke-width: 1.75; transition: stroke-width var(--duration-fade) var(--ease-out), opacity var(--duration-fade) var(--ease-out); }
 .w2-ge--spine .w2-ge__line { stroke-width: 2.25; }
 .w2-ge--uses .w2-ge__line { stroke: var(--line-control); stroke-dasharray: 6 4; }
+/* 参考 (ADR-073): made after it like a source, so the same ink, but dashed — it never watches the other side's version */
+.w2-ge--reference .w2-ge__line { stroke: var(--ink-2); stroke-dasharray: 3 3; }
 .w2-ge--belongs .w2-ge__line { stroke: var(--line-control); stroke-dasharray: 0.5 5; stroke-linecap: round; stroke-width: 2.5; }
 .w2-ge--stale .w2-ge__line { stroke: var(--warning-ink); }
 .w2-ge--broken .w2-ge__line { stroke: var(--danger-ink); stroke-dasharray: 6 4; }
 .w2-ge__hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .w2-ge:hover .w2-ge__line, .w2-ge[data-on] .w2-ge__line { stroke-width: 3; }
-.w2-ge[data-on].w2-ge--source:not(.w2-ge--stale):not(.w2-ge--broken) .w2-ge__line { stroke: var(--ink-1); }
+.w2-ge[data-on].w2-ge--source:not(.w2-ge--stale):not(.w2-ge--broken) .w2-ge__line, .w2-ge[data-on].w2-ge--reference:not(.w2-ge--broken) .w2-ge__line { stroke: var(--ink-1); }
 .w2-ge--temp { fill: none; stroke: var(--accent-ring); stroke-width: 2; stroke-dasharray: 4 4; }
 .w2-ge__slot { font-size: 10px; fill: var(--ink-2); font-family: var(--font-mono); }
 .w2-rg--focus .w2-gn:not(.w2-gn--hl) { opacity: 0.38; }
@@ -289,6 +291,7 @@
 .w2-rg__legend span { display: inline-flex; align-items: center; gap: var(--space-1); }
 .w2-lg { fill: none; stroke-width: 2; }
 .w2-lg--source { stroke: var(--ink-2); }
+.w2-lg--reference { stroke: var(--ink-2); stroke-dasharray: 3 3; }
 .w2-lg--uses { stroke: var(--line-control); stroke-dasharray: 5 3; }
 .w2-lg--belongs { stroke: var(--line-control); stroke-dasharray: 0.5 4; stroke-linecap: round; stroke-width: 2.5; }
 .w2-lg--stale { stroke: var(--warning-ink); }

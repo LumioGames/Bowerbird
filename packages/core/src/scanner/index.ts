@@ -39,6 +39,11 @@ export interface ScannerOptions {
   /** Hook run after a full scan (plugin-missing, trash expiry). */
   afterFull?: () => Promise<void>
   /**
+   * Assets with a .bmeta whose file is still there but now matched by an ignore rule (ADR-067): the library lets go
+   * of them — the service moves each .bmeta to the trash and leaves the file. Called inside the lock.
+   */
+  onIgnored?: (ids: Guid[]) => Promise<void>
+  /**
    * A full scan starts working (true) and stops (false) — not while it only waits to look again at files still being
    * written. The pipeline yields meanwhile (pipeline-and-cache.md「扫描时让路」).
    */
@@ -88,6 +93,9 @@ export class Scanner {
   }
 
   private get stableMs(): number { return this.o.stableMs ?? 2000 }
+
+  /** The running scan was asked to stop (a full-scan hook must not treat what it saw as the whole library). */
+  get stopping(): boolean { return this.stopFlag }
 
   private mem(step: string): void {
     if (!MEMTRACE) return
@@ -427,6 +435,7 @@ export class Scanner {
     const conflictPaths = new Set<string>()
     const orphanPaths = new Set<string>()
     const fresh: FileInfo[] = []
+    const gone: Guid[] = []
     this.displaced.clear()
 
     // sidecars
@@ -552,10 +561,17 @@ export class Scanner {
         }
       }
 
-      /* C. files without a sidecar: R8 when the index knows the path, else new */
+      /* C. files without a sidecar: an asset the library only sees (ADR-067); R8 when the index knows a .bmeta; else new */
       for (const [p, f] of present) {
         if (handled.has(p) || side.has(p)) continue
         const row = store.rowByPath(p)
+        if (row && !row.sidecar && !byId.has(row.id)) {
+          if (await core.fs.exists(p + SIDECAR_SUFFIX)) continue // a sidecar appeared meanwhile: next scan
+          const res = await this.syncSeen(p, row, f)
+          if (res.changed) touched.add(row.id)
+          if (res.content) { enqueueAll.add(row.id); contentChanged.add(row.id) }
+          continue
+        }
         if (row && !byId.has(row.id)) {
           const meta = store.meta(row)
           if (await core.fs.exists(p + SIDECAR_SUFFIX)) continue // a sidecar appeared meanwhile: next scan
@@ -579,11 +595,25 @@ export class Scanner {
           yield* q as Iterable<{ id: string; path: string; missing: number }>
         }
       }
+      const ignoredNow: Guid[] = []
       for (const r of lightRows()) {
         if (r.missing || r.path.includes('\u0000') || r.path.startsWith(PARKED_PREFIX) || !this.inScope(r.path, scopes)) continue
         if (walked.has(r.path) || side.has(r.path) || byId.has(r.id) || missing.has(r.id)) continue
         const row = store.row(r.id)
-        if (row) missing.set(r.id, { path: r.path, meta: store.meta(row), sidecar: null })
+        if (!row) continue
+        const there = await core.fs.stat(row.path)
+        // still there, but an ignore rule now matches it: the library lets go of it (ADR-067)
+        if (there && core.fs.ignored(row.path, !!row.bundle)) { ignoredNow.push(row.id); continue }
+        // written after this scan walked its folder (an upload, a registration meanwhile): the next scan sees it
+        if (there) continue
+        // the file was only seen: nothing to keep, the index forgets it (ADR-067)
+        if (!row.sidecar) { gone.push(row.id); continue }
+        missing.set(r.id, { path: r.path, meta: store.meta(row), sidecar: null })
+      }
+      for (const id of gone) this.forgetSeen(id, touched)
+      if (ignoredNow.length) {
+        if (this.o.onIgnored) await this.o.onIgnored(ignoredNow)
+        for (const id of ignoredNow) touched.add(id)
       }
     })
 
@@ -618,8 +648,11 @@ export class Scanner {
             missing.delete(hit.id)
             touched.add(hit.id)
           } else {
+            // only seen: the asset lives in the index until someone says something about it (ADR-067); its
+            // creation time is the file's own
+            const fileTime = new Date(Math.min(f.birthtimeMs || f.mtimeMs, f.mtimeMs) || f.mtimeMs).toISOString()
             const meta = await core.claim(f.path, { hash: f.hash, size: f.size, isDir: f.isDir }, {
-              by: SCANNER_ACTOR, at: nowIso(), versionAt: new Date(f.mtimeMs).toISOString()
+              by: SCANNER_ACTOR, at: fileTime, versionAt: new Date(f.mtimeMs).toISOString(), indexOnly: true
             })
             touched.add(meta.id)
             enqueueAll.add(meta.id)
@@ -717,6 +750,11 @@ export class Scanner {
   /** Make room for `id` at `p` in the index: another asset still recorded there moves to a temporary path. */
   private freePath(p: string, id: Guid): void {
     const occupant = this.core.store.rowByPath(p)
+    if (occupant && occupant.id !== id && !occupant.sidecar) {
+      // a file the library only saw: the asset arriving with a .bmeta is what this path holds now
+      this.forgetSeen(occupant.id, null)
+      return
+    }
     if (occupant && occupant.id !== id) {
       this.core.store.updatePath(occupant.id, `${occupant.path}\u0000${occupant.id}`)
       this.displaced.add(occupant.id)
@@ -814,6 +852,49 @@ export class Scanner {
     return { added: false, content: content || !!row.missing, changed: true }
   }
 
+  /**
+   * A file the library only sees (ADR-067): its content may have changed (R4 without a version record — there is no
+   * .bmeta to keep one in; the index's single version follows the file).
+   */
+  private async syncSeen(p: string, row: AssetRow, f: FileInfo): Promise<{ changed: boolean; content: boolean }> {
+    const core = this.core
+    if (row.hash === f.hash && !row.missing) {
+      if (row.size !== f.size || row.mtime_ms !== f.mtimeMs) core.store.setStat(row.id, { size: f.size, mtimeMs: f.mtimeMs })
+      return { changed: false, content: false }
+    }
+    const old = core.store.meta(row)
+    const meta: Bmeta = { ...old, hash: f.hash, versions: [{ hash: f.hash, size: f.size, at: new Date(f.mtimeMs).toISOString(), by: SCANNER_ACTOR }] }
+    await core.indexOnly(p, meta)
+    core.store.setFile(p, f.size, f.mtimeMs, f.hash)
+    core.emit('asset.updated', { id: row.id, fields: ['content'], by: SCANNER_ACTOR, version: 1 })
+    return { changed: true, content: true }
+  }
+
+  /** The index forgets a file it only saw (gone, or its path now belongs to an asset with a .bmeta). */
+  private forgetSeen(id: Guid, touched: Set<Guid> | null): void {
+    const core = this.core
+    const referrers = core.store.referrers(id)
+    // a seen asset's relations to it were worked out of its file (slot pairing): drop them and pair again, so a file
+    // moved outside Bowerbird is found again under its new GUID instead of leaving a broken reference (ADR-067)
+    for (const r of referrers) {
+      const row = core.store.row(r)
+      if (!row || row.sidecar) continue
+      const m = core.store.meta(row)
+      const rels = (m.relations ?? []).filter(x => x.to !== id)
+      if (rels.length === (m.relations ?? []).length) continue
+      const next = { ...m, ...(rels.length ? { relations: rels } : {}) }
+      if (!rels.length) delete next.relations
+      core.store.upsertAsset({ meta: next, path: row.path, size: row.size, mtimeMs: row.mtime_ms, metaMtimeMs: 0, missing: false, sidecar: false })
+      core.hooks.enqueue(r, ['probe'], { reason: 'reference gone' })
+    }
+    core.store.deleteAsset(id)
+    core.hooks.forget(id)
+    core.hooks.removeDocs([id])
+    core.integrity.removeAsset(id)
+    core.emit('asset.removed', { id, reason: 'gone' })
+    if (touched) for (const r of referrers) touched.add(r)
+  }
+
   /** R9: a second sidecar with the same GUID → the copy gets a new GUID and the copy semantics. */
   private async duplicateIdentity(p: string, expectId: Guid, f: FileInfo, originalPath: string, reason: string): Promise<Guid> {
     const core = this.core
@@ -821,8 +902,7 @@ export class Scanner {
     if (!again?.ok || again.meta.id !== expectId) return expectId // changed meanwhile: the next scan decides
     const meta = again.meta
     const at = nowIso()
-    const rec = await core.copyRecord({ id: meta.id, hash: meta.hash }, SCANNER_ACTOR, at)
-    const base = core.copyMeta(meta, { hash: f.hash, size: f.size, by: SCANNER_ACTOR, at, recordId: rec.id })
+    const base = core.copyMeta(meta, { hash: f.hash, size: f.size, by: SCANNER_ACTOR, at })
     // the pending decision lives in the copy's sidecar, so the issue survives an index rebuild (P2-6)
     const note: IdentityNote = { copiedFrom: meta.id, at, confirmed: false, reason, originalPath, copyPath: p }
     const copy: Bmeta = { ...base, fields: { ...(base.fields ?? {}), [IDENTITY_FIELD]: note as unknown as Record<string, unknown> } }

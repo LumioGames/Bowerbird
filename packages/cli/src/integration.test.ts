@@ -80,17 +80,18 @@ describe('agentSearchScope = approved narrows searches, not lookups by path', ()
     expect(g.json.asset).toMatchObject({ id: pendingId, review: 'pending' })
     const t = await bb(['tag', 'props/lid.png', '--add', '盖子', '--json'], { BOWERBIRD_ACTOR: 'agent:modeler' })
     expect(t.code).toBe(0)
-    expect(t.json[0].asset.tags).toContain('盖子')
+    expect(t.json.results[0]).toMatchObject({ id: pendingId, changed: true })
+    expect((await api.assets.get(lib, pendingId)).tags).toContain('盖子')
   })
-  it('MCP bb_get / bb_update by path find it too; bb_search stays narrowed', async () => {
+  it('MCP bb_get / bb_apply by path find it too; bb_search stays narrowed', async () => {
     const { client, call } = await mcpClient({ baseUrl: server.url, actor: 'modeler' })
-    const g = await call('bb_get', { id: 'props/lid.png' })
+    const g = await call('bb_get', { ref: 'props/lid.png' })
     expect(g.isError).toBe(false)
     expect(g.text).toContain(pendingId)
-    const u = await call('bb_update', { id: 'props/lid.png', description: '宝箱的盖子' })
+    const u = await call('bb_apply', { items: [{ path: 'props/lid.png', description: '宝箱的盖子' }] })
     expect(u.isError).toBe(false)
     expect((await api.assets.get(lib, pendingId)).descriptionFull).toBe('宝箱的盖子')
-    const s = await call('bb_search', { query: 'folder:props' })
+    const s = await call('bb_search', { query: ['folder:props'] })
     expect(s.text).toContain(approvedId)
     expect(s.text).not.toContain(pendingId)
     await client.close()
@@ -102,7 +103,7 @@ describe('bb mcp --name 建模', () => {
     const r = await bb(['mcp', '--name', '建模'], {}, {
       runMcpServer: async o => {
         const { client, call } = await mcpClient(o)
-        const u = await call('bb_update', { id: approvedId, tags: { add: ['道具'] } })
+        const u = await call('bb_tag', { refs: [approvedId], add: ['道具'] })
         expect(u.isError).toBe(false)
         await client.close()
       }

@@ -308,7 +308,7 @@ test.describe('检查器', () => {
     await expect(insp.getByText('概况')).toBeVisible()
 
     await cell(page, 'chest.glb').click()
-    for (const s of ['基本', '描述', '标签', '阶段与校验', '技术信息', '生产记录']) await expect(insp.getByRole('button', { name: new RegExp(`^${s}`) }).first()).toBeVisible()
+    for (const s of ['基本', '描述', '标签', '阶段与校验', '技术信息', '出处']) await expect(insp.getByRole('button', { name: new RegExp(`^${s}`) }).first()).toBeVisible()
     await expect(insp.getByRole('button', { name: /^关系 · 6/ })).toBeVisible()
     await expect(insp.getByRole('button', { name: /^版本 · 2/ })).toBeVisible()
     await expect(insp.getByText('木质宝箱模型，黄铜包边，正面有锁扣，箱盖为半圆柱形。')).toBeVisible()

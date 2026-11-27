@@ -13,10 +13,18 @@ import {
 /** Every review state: pass it as `filter.review` for lookups so `agentSearchScope = approved` does not apply. */
 export const ALL_REVIEW = REVIEW_STATUSES
 
-/** Library id: the given one, else the server's default, else the only one. */
+/**
+ * Library id: the given one (an id is used as it is; a name is looked up), else the server's default, else the only
+ * one. A known id never lists libraries: listing them opens every library of that server (access control).
+ */
 export async function resolveLibrary(client: ApiClient, given?: string): Promise<string> {
-  if (given) return given
+  if (given && Guid.safeParse(given).success) return given
   const r = await client.libraries.list()
+  if (given) {
+    const hit = r.libraries.find(l => l.id === given || l.name === given)
+    if (!hit) throw new BowerbirdApiError(404, 'not_found', `服务没有登记这个资产库：${given}`)
+    return hit.id
+  }
   const id = r.defaultId ?? (r.libraries.length === 1 ? r.libraries[0]!.id : null)
   if (!id) throw new BowerbirdApiError(404, 'not_found', r.libraries.length ? '服务登记了多个资产库，请用 --library 指定' : '服务还没有登记资产库')
   return id

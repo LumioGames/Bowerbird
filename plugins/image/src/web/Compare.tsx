@@ -1,7 +1,7 @@
 /**
  * Image compare (builtin-plugins.md「对比视图」, prototype compare.js `FMT.image`): side by side, wipe, overlay
  * with opacity, and the pixel difference. Sizes that differ align by proportion or by original pixels; a slice
- * against the picture it was cut from crops that picture to the record's `rect` (ADR-036).
+ * against the picture it was cut from crops that picture to the `rect` in the slice's provenance (ADR-036).
  * One pan / zoom drives every layer, so the two sides move together. The wipe divider is the shell's.
  */
 import * as React from 'react'

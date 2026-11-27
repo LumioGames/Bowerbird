@@ -1,6 +1,6 @@
 /**
  * 「另存为图片资产…」(prototype saveDialog, builtin-plugins.md「出图」): a square shot registered as a PNG with a
- * production record of method `render` (camera, environment, channel) and a source relation to the model —
+ * provenance of method `render` (camera, environment, channel) and a source relation to the model (role 模型) —
  * used to make icons from models. The new image keeps the model's tags and design objects (prototype).
  */
 import * as React from 'react'
@@ -67,11 +67,10 @@ export function ShotDialog({ open, onOpenChange, asset, shoot, params }: {
       const finalName = /\.png$/i.test(name.trim()) ? name.trim() : name.trim() + '.png'
       const res = await shell.api.assets.register(lib, {
         folder, name: finalName, tags: asset.tags, onConflict: 'keep-both',
-        relations: [{ type: 'source', to: asset.id }, ...belongs],
-        record: {
+        relations: [{ type: 'source', to: asset.id, role: tr('roleModel') }, ...belongs],
+        provenance: {
           method: 'render', tool: tr('toolName'),
-          params: { ...params(), size: `${size}×${size}`, transparent },
-          inputs: [{ id: asset.id, role: tr('roleModel') }]
+          params: { ...params(), size: `${size}×${size}`, transparent }
         }
       }, { data: new Uint8Array(await blob.arrayBuffer()), name: finalName, type: 'image/png' })
       onOpenChange(false)

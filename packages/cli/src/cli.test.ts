@@ -24,7 +24,7 @@ beforeAll(async () => {
     svc: {
       register: async (input: { fields: Record<string, unknown>; file?: { name: string } }) => {
         if (input.file?.name === 'conflict.png') throw new CoreError('conflict', '目标位置已有同名文件')
-        return { asset: (await import('../../server/src/__tests__/fake-hub.js')).detail(), skipped: false, recordId: null, newTags: [] }
+        return { asset: (await import('../../server/src/__tests__/fake-hub.js')).detail(), skipped: false, newTags: [] }
       },
       trash: async (id: string, opts: { force: boolean }) => {
         if (id === ID2 && !opts.force) throw new CoreError('referenced', '该资产被 1 个资产引用', { referrers: [ID1] })
@@ -71,7 +71,7 @@ describe('search', () => {
       q: '红色 宝箱', sort: 'name', limit: 10,
       filter: { stage: ['runtime'], format: ['model'], tags: { all: ['宝箱'], none: ['废弃'] }, tech: { triangles: { lt: 5000 } } }
     })
-    expect(r.out).toContain(`${ID1} props/chest.png image stage=production review=pending tags=宝箱`)
+    expect(r.out).toContain(`${ID1} props/chest.png image 阶段=production 校验=pending 标签=宝箱`)
   })
   it('--json prints the API response', async () => {
     const r = await bb(['search', '--json'])
@@ -84,7 +84,7 @@ describe('search', () => {
     expect(a.json).toEqual(b.json)
   })
   it('with --json, argument errors are JSON on stdout too', async () => {
-    for (const args of [['search', '--limit', '0', '--json'], ['serve', '--port', 'x', '--json'], ['export', ID1, '--json'], ['search', '--sort', 'random', '--json'], ['nope', '--json']]) {
+    for (const args of [['search', '--limit', '0', '--json'], ['serve', '--port', 'x', '--json'], ['tag', '--json'], ['search', '--sort', 'random', '--json'], ['apply', '--items', '{nope', '--json'], ['nope', '--json']]) {
       const r = await bb(args)
       expect(r.code, args.join(' ')).not.toBe(0)
       expect(r.err, args.join(' ')).toBe('')
@@ -115,7 +115,7 @@ describe('get / trace', () => {
     expect(a.json.summary.imageMissingReason).toContain('概览图还没有渲染')
     const b = await bb(['get', 'props/chest.png'])
     expect(b.out).toContain(`chest.png  ${ID1}`)
-    expect(b.out).toContain('stage=production review=pending')
+    expect(b.out).toContain('阶段=production 校验=pending')
     expect((fake.last('search')!.args[0] as { filter: unknown }).filter).toEqual({ folder: 'props', folderExact: true, includeAuxiliary: true, review: ['pending', 'approved', 'rejected', 'exempt'] })
   })
   it('get by a local file path inside the library', async () => {
@@ -137,17 +137,21 @@ describe('get / trace', () => {
 })
 
 describe('add', () => {
-  it('uploads files outside the library with one shared production record and source relations', async () => {
+  it('uploads files outside the library with one provenance and one batch id, and source relations', async () => {
     const a = path.join(tmp, 'a.png'); fs.writeFileSync(a, 'AAA')
     const b = path.join(tmp, '红色宝箱.png'); fs.writeFileSync(b, 'BBB')
     const r = await bb(['add', 'a.png', '红色宝箱.png', '--folder', 'props', '--stage', 'production', '--tag', '宝箱', '--tag', '道具,红色',
-      '--source', ID2, '--prompt', '红色的卡通宝箱', '--tool', 'sdxl', '--json'])
+      '--source', ID2, '--prompt', '红色的卡通宝箱', '--tool', 'sdxl', '--param', 'model=sdxl-1', '--param', 'seed=7', '--json'])
     expect(r.code).toBe(0)
-    expect(fake.last('createRecord')!.args[0]).toEqual({ method: 'ai-generate', tool: 'sdxl', prompt: '红色的卡通宝箱', inputs: [{ id: ID2 }] })
     const regs = fake.calls.filter(c => c.method === 'register')
     expect(regs.length).toBe(2)
-    const first = regs[0]!.args[0] as { fields: Record<string, unknown>; file: { name: string } }
-    expect(first.fields).toEqual({ stage: 'production', tags: ['宝箱', '道具', '红色'], relations: [{ type: 'source', to: ID2 }], record: 'rec_1', folder: 'props' })
+    const first = regs[0]!.args[0] as { fields: Record<string, unknown> & { provenance: { batch: string } }; file: { name: string } }
+    expect(first.fields).toEqual({
+      stage: 'production', tags: ['宝箱', '道具', '红色'], relations: [{ type: 'source', to: ID2 }], folder: 'props',
+      provenance: { method: 'ai-generate', tool: 'sdxl', prompt: '红色的卡通宝箱', params: { model: 'sdxl-1', seed: 7 }, batch: expect.stringMatching(/^bat_/) }
+    })
+    expect((regs[1]!.args[0] as { fields: { provenance: { batch: string } } }).fields.provenance.batch).toBe(first.fields.provenance.batch)
+    expect(r.json.batch).toBe(first.fields.provenance.batch)
     expect((regs[1]!.args[0] as { file: { name: string } }).file.name).toBe('红色宝箱.png')
     expect(r.json.registered.length).toBe(2)
     expect(r.json.failed).toBeNull()
@@ -159,22 +163,20 @@ describe('add', () => {
     expect(r.json.registered.map((x: { file: string }) => x.file)).toEqual(['one.png'])
     expect(r.json.registered[0].result.asset.id).toBe(ID1)
     expect(r.json.failed).toEqual({ file: 'conflict.png', error: { code: 'conflict', message: '目标位置已有同名文件' }, notRun: ['three.png'] })
-    expect(r.json.recordId).toBe('rec_1')
     const t = await bb(['add', 'one.png', 'conflict.png', 'three.png'])
     expect(t.code).toBe(1)
-    expect(t.out).toContain(`registered ${ID1}`)
+    expect(t.out).toContain(`已登记 ${ID1}`)
     expect(t.out).toContain('没有登记 conflict.png：目标位置已有同名文件')
     expect(t.out).toContain('没有处理：three.png')
   })
-  it('registers a file already in the library in place, with an inline record', async () => {
+  it('registers a file already in the library in place, with its provenance', async () => {
     const root = (await fake.svc.info({ actor: 'user:unnamed', isLocal: true })).root
     const r = await bb(['add', path.join(root, 'props', 'chest.png'), '--method', 'manual'])
     expect(r.code).toBe(0)
     const reg = fake.last('register')!.args[0] as { fields: Record<string, unknown>; file?: unknown }
     expect(reg.file).toBeUndefined()
-    expect(reg.fields).toEqual({ record: { method: 'manual' }, path: 'props/chest.png' })
-    expect(fake.last('createRecord')).toBeUndefined()
-    expect(r.out).toContain('registered')
+    expect(reg.fields).toEqual({ provenance: { method: 'manual' }, path: 'props/chest.png' })
+    expect(r.out).toContain('已登记')
   })
   it('a missing local file is an error', async () => {
     const r = await bb(['add', 'nope.png'])
@@ -189,7 +191,7 @@ describe('BOWERBIRD_ACTOR', () => {
     for (const [given, recorded] of [['lin', 'user:lin'], ['林', 'user:林'], ['agent:cutter', 'agent:cutter'], ['user:莫', 'user:莫']]) {
       const r = await bb(['tag', ID1, '--add', 'x'], env(given!))
       expect(r.code, given).toBe(0)
-      expect((fake.last('patch')!.args[2] as { actor: string }).actor, given).toBe(recorded)
+      expect((fake.last('apply')!.args[1] as { actor: string }).actor, given).toBe(recorded)
     }
   })
 })
@@ -223,8 +225,8 @@ describe('export of a bundle asset from another machine', () => {
 describe('tag / export / health / rescan / rm', () => {
   it('tag adds and removes', async () => {
     const r = await bb(['tag', ID1, '--add', '宝箱', '--add', '道具,红色', '--remove', '废弃', '--json'])
-    expect(fake.last('patch')!.args[1]).toEqual({ tags: { add: ['宝箱', '道具', '红色'], remove: ['废弃'] } })
-    expect(r.json[0].asset.id).toBe(ID1)
+    expect(fake.last('apply')!.args[0]).toEqual({ items: [{ id: ID1, tags: { add: ['宝箱', '道具', '红色'], remove: ['废弃'] } }] })
+    expect(r.json.results[0].id).toBe(ID1)
     expect((await bb(['tag', ID1])).code).toBe(1)
   })
   it('export to a directory on this machine', async () => {
@@ -232,7 +234,10 @@ describe('tag / export / health / rescan / rm', () => {
     expect(r.code).toBe(0)
     expect(fake.last('exportToDir')!.args[0]).toEqual({ ids: [ID1], withDeps: true, layout: 'flat', dir: path.join(tmp, 'out') })
     expect(r.json.written).toBe(1)
-    expect((await bb(['export', ID1])).code).not.toBe(0)
+    // without --to: where the file is
+    const where = await bb(['export', ID1])
+    expect(where.code).toBe(0)
+    expect(where.out).toMatch(/^(路径|地址)：/)
   })
   it('health filters by type and level', async () => {
     const r = await bb(['health', '--type', 'missing-file', '--level', 'error', '--json'])
@@ -341,9 +346,12 @@ describe('local commands', () => {
     const r = await bb(['mcp', '--name', 'modeler', '--library', LIB], { runMcpServer: async o => { got = o } })
     expect(r.code).toBe(0)
     expect(r.out).toBe('')
-    expect(got).toEqual({ baseUrl: server.url, library: LIB, actor: 'modeler' })
+    expect(got).toEqual({ baseUrl: server.url, library: LIB, actor: 'modeler', cwd: tmp })
     await bb(['mcp'], { runMcpServer: async o => { got = o }, env: { BOWERBIRD_URL: 'http://h:1', BOWERBIRD_AGENT: 'cutter' } })
-    expect(got).toEqual({ baseUrl: 'http://h:1', actor: 'cutter' })
+    expect(got).toEqual({ baseUrl: 'http://h:1', actor: 'cutter', cwd: tmp })
+    // no server named: the MCP server finds one per call, or opens the library itself (ADR-069)
+    await bb(['mcp'], { runMcpServer: async o => { got = o }, env: { BOWERBIRD_HOME: path.join(tmp, 'home') } })
+    expect(got).toMatchObject({ home: path.join(tmp, 'home'), openLocal: expect.any(Function), defaultUrl: 'http://127.0.0.1:7420' })
   })
 
   it('bb mcp --name 建模: the server records agent:建模 (encoded once, end to end)', async () => {
@@ -353,13 +361,13 @@ describe('local commands', () => {
         const client = new Client({ name: 'test', version: '1' })
         const [a, b] = InMemoryTransport.createLinkedPair()
         await Promise.all([mcp.connect(a), client.connect(b)])
-        const res = await client.callTool({ name: 'bb_update', arguments: { id: ID1, tags: { add: ['宝箱'] } } }) as { isError?: boolean }
+        const res = await client.callTool({ name: 'bb_tag', arguments: { refs: [ID1], add: ['宝箱'] } }) as { isError?: boolean }
         expect(res.isError).toBeFalsy()
         await client.close()
       }
     })
     expect(r.code).toBe(0)
-    expect((fake.last('patch')!.args[2] as { actor: string }).actor).toBe('agent:建模')
+    expect((fake.last('apply')!.args[1] as { actor: string }).actor).toBe('agent:建模')
   })
 })
 

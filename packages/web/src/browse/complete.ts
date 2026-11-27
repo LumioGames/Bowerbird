@@ -46,7 +46,7 @@ export function valuesFor(key: string, src: CompletionSource): Array<[string, st
     case 'folder': return (src.folders ?? []).map(f => [f + '/', ''])
     case 'is': return [['issue', t('ac.is.issue')], ['stale', t('ac.is.stale')], ['missing', t('ac.is.missing')]]
     case 'when': case 'created': return (['today', 'week', 'month'] as const).map(w => [w, t('ac.when.' + w)])
-    case 'by': return [['agent', t('ac.by.agent')], ['user', t('ac.by.user')], ...(v?.actors ?? []).map(a => [a.id, ''] as [string, string])]
+    case 'by': case 'editor': return [['agent', t('ac.by.agent')], ['user', t('ac.by.user')], ...(v?.actors ?? []).map(a => [a.id, ''] as [string, string])]
     case 'belongs': return (v?.designObjects ?? []).map(o => [o.name.replace(/\.[^.]+$/, ''), o.title ?? ''])
     case 'method': {
       const ids = new Set<string>(['ai-generate', 'manual', 'slice', 'render', 'export', 'convert', 'copy', 'other'])

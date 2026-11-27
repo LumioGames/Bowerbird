@@ -116,7 +116,7 @@ export function addConditions(base: Filter, add: Filter): Filter {
     }
   }
   if (add.tech) out.tech = { ...(out.tech ?? {}), ...Object.fromEntries(Object.entries(add.tech).map(([k, c]) => [k, { ...(out.tech?.[k] ?? {}), ...c }])) }
-  for (const k of ['folder', 'by', 'relation', 'modified', 'created', 'hasIssues', 'humanTagsOnly', 'includeAuxiliary'] as const) {
+  for (const k of ['folder', 'by', 'modifiedBy', 'batch', 'relation', 'modified', 'created', 'hasIssues', 'humanTagsOnly', 'includeAuxiliary'] as const) {
     if (add[k] !== undefined) (out as Record<string, unknown>)[k] = add[k]
   }
   return out
@@ -170,6 +170,8 @@ export function removeChip(s: Pick<BrowseState, 'filter' | 'extras'>, chip: Quer
     case 'when': delete f.modified; delete extras.when; break
     case 'created': delete f.created; delete extras.createdWhen; break
     case 'by': delete f.by; break
+    case 'editor': delete f.modifiedBy; break
+    case 'batch': delete f.batch; break
     default: {
       // tech condition: tris / dur / width / height / any plugin key
       const techKey = key === 'tris' ? 'triangles' : key === 'dur' ? 'duration' : key

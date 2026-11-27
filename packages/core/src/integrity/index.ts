@@ -192,12 +192,11 @@ export class Integrity {
     const identity = identityOf(meta)
     if (identity && identity.confirmed === false) {
       const orig = store.row(identity.copiedFrom)
-      const rec = meta.relations?.find(r => r.type === 'source' && r.to === identity.copiedFrom)?.record
       want.push({
         id: issueId.dupGuid(id), type: 'duplicate-guid', assetId: id, path: row.path,
         details: {
           otherId: identity.copiedFrom, otherPath: orig?.path ?? identity.originalPath ?? null, originalPath: orig?.path ?? identity.originalPath ?? null,
-          copyPath: row.path, reason: identity.reason ?? 'index', referencedBy: store.referrers(identity.copiedFrom).length, ...(rec ? { recordId: rec } : {})
+          copyPath: row.path, reason: identity.reason ?? 'index', referencedBy: store.referrers(identity.copiedFrom).length
         }
       })
     }

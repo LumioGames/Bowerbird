@@ -4,7 +4,7 @@
  * through `ctx.register`. Built-in and third-party plugins use exactly these types — there is no private channel.
  */
 import type {
-  AssetDetail, AssetSummary, Guid, Hash, JobAction, PipelineStage, ProductionRecord, RegisterFields, Stage,
+  AssetDetail, AssetSummary, Guid, Hash, JobAction, PipelineStage, RegisterFields, Stage,
   ViewGrid, Query, SearchResponse, Issue, Relation, Bmeta
 } from '@bowerbird/schema'
 
@@ -20,7 +20,7 @@ export interface Logger {
   error(msg: string, data?: Record<string, unknown>): void
 }
 
-/** Read-only view of the library (assets, relations, records). Plugins never write the library directly. */
+/** Read-only view of the library (assets, relations, provenance). Plugins never write the library directly. */
 export interface LibraryReader {
   readonly id: string
   readonly name: string
@@ -29,7 +29,6 @@ export interface LibraryReader {
   get(id: Guid): Promise<AssetDetail | null>
   getByPath(path: string): Promise<AssetDetail | null>
   search(query: Query): Promise<SearchResponse>
-  record(id: string): Promise<ProductionRecord | null>
   /** Absolute path of an asset's file (bundle: its folder). */
   filePath(id: Guid): Promise<string | null>
   issues(assetId?: Guid): Promise<Issue[]>
@@ -303,7 +302,7 @@ export interface Source {
 }
 
 export interface CreatorInputSpec {
-  /** Written into the record's input `role`. */
+  /** Written as the `role` of the output's source relation to this input (ADR-070). */
   role: string
   formats?: string[]
   /** The input must be a turnaround sheet: an asset whose .bmeta has a view grid (`views`, ADR-019). */
@@ -335,9 +334,10 @@ export interface JobContext {
   progress(value: number, message?: string, action?: JobAction): void
   readonly signal: AbortSignal
   /**
-   * Register one output through the kernel. All outputs of one run share one production record:
-   * pass `record` on the first call (or let the kernel create it from the first output's record input);
-   * runs without outputs write no record.
+   * Register one output through the kernel. Every output of one run gets the run's provenance in its own .bmeta,
+   * with the same `batch` id (ADR-070): give `provenance` on an output to say more (tool, prompt, params), otherwise
+   * the kernel writes `method = <pluginId>/<creatorId>` with the run's params. The run's inputs become source
+   * relations of each output, with their roles, unless the output names its own relations.
    */
   register(output: RegisterRequest): Promise<AssetInfo>
 }

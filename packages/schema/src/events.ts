@@ -17,7 +17,7 @@ export const EventPayloads = {
   'asset.created': z.object({ id: Guid, path: z.string(), by: Actor.optional() }),
   /** `fields` lists what changed: tags, description, stage, review, content, path, relations, auto, fields, thumbnail… */
   'asset.updated': z.object({ id: Guid, fields: z.array(z.string()), by: Actor.optional(), version: z.number().int().optional() }),
-  'asset.removed': z.object({ id: Guid, reason: z.enum(['trash', 'missing', 'purged']) }),
+  'asset.removed': z.object({ id: Guid, reason: z.enum(['trash', 'missing', 'purged', 'gone', 'untracked']) }),
   'asset.thumbnail': z.object({ id: Guid, url: z.string().nullable() }),
   'relation.updated': z.object({ from: Guid, type: z.string(), to: Guid.nullable(), op: z.enum(['added', 'removed', 'replaced', 'acknowledged']) }),
   'tags.updated': z.object({}),

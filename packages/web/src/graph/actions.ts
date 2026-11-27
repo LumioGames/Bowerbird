@@ -24,7 +24,7 @@ const refresh = (qc: QueryClient, lib: string, ...ids: Array<string | null | und
 
 /** What the relation is called in the dialogs: its note (「基础色」), else its slot, else the type name. */
 export function slotLabel(rel: Pick<RelRef, 'note' | 'slot' | 'type'>): string {
-  return rel.note || rel.slot || t(`w2.rel.type.${rel.type === 'source' || rel.type === 'uses' || rel.type === 'belongs' ? rel.type : 'other'}`)
+  return rel.note || rel.slot || t(`w2.rel.type.${rel.type === 'source' || rel.type === 'reference' || rel.type === 'uses' || rel.type === 'belongs' ? rel.type : 'other'}`)
 }
 
 /**
@@ -56,14 +56,14 @@ export async function swapRelation(qc: QueryClient, lib: string, rel: RelRef, cu
   } catch (e) { toast({ kind: 'error', title: errText(e) }); return false }
 }
 
-/** 删除这条关系 (undo re-adds it with the same type, slot, note and record). */
+/** 删除这条关系 (undo re-adds it with the same type, slot, note and role). */
 export async function removeRelation(qc: QueryClient, lib: string, rel: RelRef): Promise<boolean> {
   try {
     await api.relations.remove(lib, rel.from, { type: rel.type, to: rel.to, slot: rel.slot })
     refresh(qc, lib, rel.from, rel.to)
     toast({
       title: t('rel.removed'),
-      undo: guardedUndo(async () => { await api.relations.add(lib, rel.from, { type: rel.type, to: rel.to, slot: rel.slot, note: rel.note, record: rel.record }); refresh(qc, lib, rel.from, rel.to) })
+      undo: guardedUndo(async () => { await api.relations.add(lib, rel.from, { type: rel.type, to: rel.to, slot: rel.slot, note: rel.note, role: rel.role }); refresh(qc, lib, rel.from, rel.to) })
     })
     return true
   } catch (e) { toast({ kind: 'error', title: errText(e) }); return false }
@@ -92,14 +92,14 @@ export async function restoreTarget(qc: QueryClient, lib: string, rel: RelRef, n
   } catch (e) { toast({ kind: 'error', title: errText(e) }); return false }
 }
 
-/** 建立关系 without a record (引用 / 归属 from the drag menu); undo removes it. */
+/** 建立关系 without saying how it was made (引用 / 归属 from the drag menu); undo removes it. */
 export async function addRelation(qc: QueryClient, lib: string, from: { id: string; name: string }, type: string, to: { id: string; name: string }): Promise<boolean> {
   try {
     await api.relations.add(lib, from.id, { type, to: to.id })
     refresh(qc, lib, from.id, to.id)
     toast({
       kind: 'success',
-      title: t(`rel.made.${type === 'belongs' ? 'belongs' : type === 'source' ? 'source' : 'uses'}`, { a: from.name, b: to.name }),
+      title: t(`rel.made.${type === 'belongs' || type === 'source' || type === 'reference' ? type : 'uses'}`, { a: from.name, b: to.name }),
       undo: guardedUndo(async () => { await api.relations.remove(lib, from.id, { type, to: to.id }); refresh(qc, lib, from.id, to.id) })
     })
     return true

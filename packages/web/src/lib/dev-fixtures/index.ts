@@ -55,15 +55,15 @@ function detailOf(s: Seed, n: number): AssetDetail {
     auto: s.ai || s.aiDesc ? { tags: s.ai ?? [], description: s.aiDesc, by: 'bowerbird.enrich-demo@0.1.0' } : null,
     fields: {}, reviewVerdict: s.review === 'rejected' ? { status: 'rejected', by: 'user:lin', at: ago(1), note: '肩甲比例不对，参考原画再收窄一点' } : s.review === 'approved' ? { status: 'approved', by: 'user:lin', at: ago(3) } : null,
     versions: [{ hash: 'sha256:' + '1'.repeat(64), size: s.bytes ?? 100_000, at: ago(10), by: s.by ?? 'user:mo', note: '初版' }, ...(s.name === 'chest.glb' ? [{ hash: 'sha256:' + '2'.repeat(64), size: 1.2e6, at: ago(0.5), by: 'user:lin', note: '修正包边比例' }] : [])],
-    views: s.grid ?? null, thumbnailManual: false, origin: null, modifiedBy: s.by ?? 'user:mo', tech, analysis: {}, unresolvedRefs: [], checks: [],
-    relations: { outgoing: [], incoming: [] }, issues: [], record: s.prompt ? { id: 'rec_' + n, method: s.method ?? 'ai-generate', tool: 'Forge', prompt: s.prompt, params: { model: 'forge-xl 2.1', seed: 1337 }, by: s.by ?? 'agent:concept-artist', at: modified } : s.method ? { id: 'rec_' + n, method: s.method, tool: 'Bowerbird', by: s.by ?? 'user:mo', at: modified } : null,
+    views: s.grid ?? null, thumbnailManual: false, modifiedBy: s.by ?? 'user:mo', tech, analysis: {}, unresolvedRefs: [], checks: [],
+    relations: { outgoing: [], incoming: [] }, issues: [], provenance: s.prompt ? { method: s.method ?? 'ai-generate', tool: 'Forge', prompt: s.prompt, params: { model: 'forge-xl 2.1', seed: 1337 }, by: s.by ?? 'agent:concept-artist', at: modified } : s.method ? { method: s.method, tool: 'Bowerbird', by: s.by ?? 'user:mo', at: modified } : null,
     bundleFiles: null, targetSize: s.name === 'chest.md' ? { w: 1.26, h: 0.95, d: 0.87, from: id } : null,
     stages: s.state === 'failed' ? [{ stage: 'thumbnail', status: 'failed', error: '这台电脑的浏览器放不了这种视频（ProRes 4444）' }] : []
   }
 }
 
 function summary(a: AssetDetail): AssetSummary {
-  const { hash: _h, descriptionFull: _d, auto: _a, fields: _f, reviewVerdict: _r, versions: _v, views: _vw, thumbnailManual: _t, origin: _o, modifiedBy: _m, tech: _te, analysis: _an, unresolvedRefs: _u, checks: _c, relations: _re, issues: _i, record: _rc, bundleFiles: _b, targetSize: _ts, stages: _s, ...rest } = a
+  const { hash: _h, descriptionFull: _d, auto: _a, fields: _f, reviewVerdict: _r, versions: _v, views: _vw, thumbnailManual: _t, provenance: _pv, modifiedBy: _m, tech: _te, analysis: _an, unresolvedRefs: _u, checks: _c, relations: _re, issues: _i, bundleFiles: _b, targetSize: _ts, stages: _s, ...rest } = a
   return rest
 }
 
@@ -82,7 +82,7 @@ function link(type: string, fromN: string, toN: string, o: Partial<RelationView>
 function seed(big: number) {
   assets.clear(); trash.length = 0
   SEEDS.forEach((s, i) => { const d = detailOf(s, i + 1); assets.set(d.id, d) })
-  link('source', 'chest.glb', 'chest_concept.png', { record: 'rec_x' })
+  link('source', 'chest.glb', 'chest_concept.png', { role: '原画' })
   link('source', 'chest.glb', 'chest_turnaround.png')
   link('uses', 'chest.glb', 'chest_basecolor.png', { slot: 'chest_basecolor.png', note: '基础色' })
   link('uses', 'chest.glb', 'chest_normal.png', { slot: 'chest_normal.png', note: '法线' })
@@ -114,7 +114,7 @@ function issuesOf(a: AssetDetail): Issue[] {
 }
 
 /* ── searching ── */
-function textOf(a: AssetDetail): string { return [a.name, a.tags.join(' '), a.autoTags.join(' '), a.descriptionFull ?? '', a.auto?.description ?? '', a.cellText?.title ?? '', a.cellText?.excerpt ?? '', a.record?.prompt ?? '', a.path].join(' ').toLowerCase() }
+function textOf(a: AssetDetail): string { return [a.name, a.tags.join(' '), a.autoTags.join(' '), a.descriptionFull ?? '', a.auto?.description ?? '', a.cellText?.title ?? '', a.cellText?.excerpt ?? '', a.provenance?.prompt ?? '', a.path].join(' ').toLowerCase() }
 
 function matches(a: AssetDetail, f: Filter, q: string): boolean {
   if (f.folder != null && f.folder !== '' && !(a.path.startsWith(f.folder.replace(/\/$/, '') + '/'))) return false
@@ -141,7 +141,9 @@ function matches(a: AssetDetail, f: Filter, q: string): boolean {
   if (f.modified?.after && a.modified < f.modified.after) return false
   if (f.created?.after && a.created < f.created.after) return false
   if (f.by && !(f.by.includes(':') ? a.createdBy === f.by : a.createdBy.startsWith(f.by + ':'))) return false
-  if (f.method?.length && !(a.record && f.method.includes(a.record.method))) return false
+  if (f.modifiedBy && !(f.modifiedBy.includes(':') ? a.modifiedBy === f.modifiedBy : !!a.modifiedBy?.startsWith(f.modifiedBy + ':'))) return false
+  if (f.method?.length && !(a.provenance && f.method.includes(a.provenance.method))) return false
+  if (f.batch && a.provenance?.batch !== f.batch) return false
   if (f.relation?.type === 'belongs') {
     const to = f.relation.to
     if (!a.relations.outgoing.some(r => r.type === 'belongs' && (r.to === to || r.targetName?.replace(/\.[^.]+$/, '') === to))) return false
@@ -153,7 +155,7 @@ function matches(a: AssetDetail, f: Filter, q: string): boolean {
 function hitOf(a: AssetDetail, q: string): AssetSummary['hit'] {
   const ws = q.toLowerCase().split(/\s+/).filter(Boolean)
   if (!ws.length || ws.every(w => a.name.toLowerCase().includes(w))) return undefined
-  const src: Array<['prompt' | 'description' | 'text', string]> = [['prompt', a.record?.prompt ?? ''], ['description', a.descriptionFull ?? a.auto?.description ?? ''], ['text', a.cellText?.excerpt ?? '']]
+  const src: Array<['prompt' | 'description' | 'text', string]> = [['prompt', a.provenance?.prompt ?? ''], ['description', a.descriptionFull ?? a.auto?.description ?? ''], ['text', a.cellText?.excerpt ?? '']]
   for (const [field, text] of src) {
     const lower = text.toLowerCase()
     const w = ws.find(x => lower.includes(x))
@@ -299,7 +301,7 @@ async function handle(method: string, path: string, body: any, form: FormData | 
     const names: Record<string, string> = { image: '图片', video: '视频', audio: '音频', model: '模型', doc: '文档', unknown: '其他' }
     return json({
       stages: [], reviews: [], formats: [...fm].map(([id, count]) => ({ id, displayName: names[id] ?? id, plugin: id === 'unknown' ? null : `bowerbird.${id}`, count })),
-      relationTypes: [{ id: 'source', name: '来源', inverseName: '下游', tracksVersion: true, plugin: null }, { id: 'uses', name: '引用', inverseName: '被引用', tracksVersion: false, plugin: null }, { id: 'belongs', name: '归属', inverseName: '归属于它', tracksVersion: false, plugin: null }],
+      relationTypes: [{ id: 'source', name: '来源', inverseName: '下游', tracksVersion: true, plugin: null }, { id: 'reference', name: '参考', inverseName: '被参考', tracksVersion: false, plugin: null }, { id: 'uses', name: '引用', inverseName: '被引用', tracksVersion: false, plugin: null }, { id: 'belongs', name: '归属', inverseName: '归属于它', tracksVersion: false, plugin: null }],
       tags: [...tags].map(([name, count]) => ({ name, count })), methods: [{ id: 'ai-generate', count: 3 }, { id: 'slice', count: 10 }],
       actors: [...new Set(list.map(a => a.createdBy))].map(id => ({ id, count: 1 })), templates: [],
       designObjects: list.filter(a => a.relations.incoming.some(r => r.type === 'belongs')).map(a => ({ id: a.id, name: a.name, title: a.cellText?.title }))
@@ -328,8 +330,6 @@ async function handle(method: string, path: string, body: any, form: FormData | 
   if ((m = /^\/trash\/([^/]+)$/.exec(p)) && method === 'DELETE') { const i = trash.findIndex(x => x.id === m![1]); if (i >= 0) trash.splice(i, 1); emit('trash.updated', {}); return json(undefined) }
   if (p === '/export/plan') { const files = (body.ids as string[]).map(id => assets.get(id)!).filter(Boolean).map(a => ({ path: body.layout === 'flat' ? a.name : a.path, size: a.size, assetId: a.id, dependency: false })); return json({ files, bytes: files.reduce((s, f) => s + f.size, 0), dependencies: 0, duplicateNames: false }) }
   if (p === '/export') return body.dir ? json({ written: body.ids.length, dir: body.dir, bytes: 0 }) : new Response(new Blob(['zip']), { status: 200 })
-  if (p === '/records' && method === 'POST') { const id = 'rec_' + ++seq; return json({ id, record: { id, ...body, by: 'user:unnamed', at: new Date().toISOString() } }) }
-  if ((m = /^\/records\/([^/]+)\/notes$/.exec(p))) return json({ record: { id: m[1], method: 'manual', by: 'user:unnamed', at: '' }, outputs: [] })
   if (p === '/assets/precheck') {
     const conflicts = (body.names as string[]).map(n => ({ n, a: [...assets.values()].find(a => a.path === (body.folder ? `${body.folder}/${n}` : n)) })).filter(x => x.a).map(x => ({ name: x.n, existing: summary(x.a!) }))
     return json({ conflicts })
@@ -342,15 +342,34 @@ async function handle(method: string, path: string, body: any, form: FormData | 
     const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
     const kind: Seed['kind'] = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) ? 'image' : ['glb', 'gltf', 'fbx'].includes(ext) ? 'model' : ['wav', 'mp3', 'ogg'].includes(ext) ? 'audio' : ['mp4', 'mov', 'webm'].includes(ext) ? 'video' : ['md', 'txt', 'html', 'json'].includes(ext) ? 'doc' : 'unknown'
     const existing = [...assets.values()].find(a => a.path === `${folder}/${name}`)
-    if (existing && meta.onConflict === 'skip') return json({ asset: null, skipped: true, recordId: null, newTags: [] })
-    if (existing && meta.onConflict === 'replace') { existing.versions.push({ hash: existing.hash, size: file?.size ?? 0, at: new Date().toISOString(), by: 'user:unnamed' }); existing.review = 'pending'; refresh(existing); touched(existing.id, ['content']); return json({ asset: existing, skipped: false, recordId: null, newTags: [] }) }
+    if (existing && meta.onConflict === 'skip') return json({ asset: null, skipped: true, newTags: [] })
+    if (existing && meta.onConflict === 'replace') { existing.versions.push({ hash: existing.hash, size: file?.size ?? 0, at: new Date().toISOString(), by: 'user:unnamed' }); existing.review = 'pending'; refresh(existing); touched(existing.id, ['content']); return json({ asset: existing, skipped: false, newTags: [] }) }
     const finalName = existing ? copyName(folder, name) : name
     const d = detailOf({ name: finalName, folder, kind, stage: meta.stage, review: meta.review === 'exempt' ? 'exempt' : 'pending', tags: meta.tags, bytes: file?.size, state: kind === 'model' ? 'waiting' : undefined, title: finalName, excerpt: '' }, ++seq)
     d.modified = new Date().toISOString()
     if (kind === 'image' && file) { d.thumbnail = URL.createObjectURL(file) }
     assets.set(d.id, d)
     emit('asset.created', { id: d.id, path: d.path, by: 'user:unnamed' })
-    return json({ asset: d, skipped: false, recordId: null, newTags: [] })
+    return json({ asset: d, skipped: false, newTags: [] })
+  }
+  if (p === '/assets/apply' && method === 'POST') {
+    const results = (body.items as Array<Record<string, any>>).map((it, index) => {
+      const a = it.id ? assets.get(it.id) : [...assets.values()].find(x => x.path === it.path)
+      if (!a) return { index, id: it.id ?? null, path: it.path ?? null, changed: false, changes: [], error: { code: 'not_found', message: 'asset' } }
+      const changes: Array<{ field: string; before: unknown; after: unknown }> = []
+      if (it.provenance !== undefined) { const before = a.provenance; setProvenance(a, it.provenance); changes.push({ field: 'provenance', before, after: a.provenance }) }
+      if (it.tags) { const before = [...a.tags]; applyTags(a, it.tags); changes.push({ field: 'tags', before, after: [...a.tags] }) }
+      if (it.stage) { changes.push({ field: 'stage', before: a.stage, after: it.stage }); a.stage = it.stage }
+      for (const r of it.relations?.add ?? []) {
+        const t = assets.get(r.to); if (!t || a.relations.outgoing.some(x => x.type === r.type && x.to === r.to)) continue
+        const o = { ...(r.slot ? { slot: r.slot } : {}), ...(r.note ? { note: r.note } : {}), ...(r.role ? { role: r.role } : {}) }
+        a.relations.outgoing.push(relView(r.type, a, t, o)); t.relations.incoming.push({ ...relView(r.type, a, t, o, false), target: summary(a) })
+        changes.push({ field: 'relations', before: null, after: r }); emit('relation.updated', { from: a.id, type: r.type, to: t.id, op: 'added' })
+      }
+      if (changes.length) { refresh(a); touched(a.id, changes.map(c => c.field)) }
+      return { index, id: a.id, path: a.path, changed: changes.length > 0, changes }
+    })
+    return json({ results, dryRun: false, newTags: [] })
   }
   if (p === '/assets/batch') {
     const ids: string[] = body.ids ?? []
@@ -371,7 +390,7 @@ async function handle(method: string, path: string, body: any, form: FormData | 
     const a = assets.get(m[1]!); const rest = m[2] ?? ''
     if (!a) return fail('not_found', 'asset', 404)
     if (rest === '' && method === 'GET') return json(a)
-    if (rest === '' && method === 'PATCH') { if (body.tags) applyTags(a, body.tags); if ('description' in body) { a.descriptionFull = body.description || null; a.description = body.description || a.auto?.description || null } if (body.stage) a.stage = body.stage; refresh(a); touched(a.id, Object.keys(body)); return json({ asset: a, newTags: [] }) }
+    if (rest === '' && method === 'PATCH') { if (body.provenance !== undefined) setProvenance(a, body.provenance); if (body.tags) applyTags(a, body.tags); if ('description' in body) { a.descriptionFull = body.description || null; a.description = body.description || a.auto?.description || null } if (body.stage) a.stage = body.stage; refresh(a); touched(a.id, Object.keys(body)); return json({ asset: a, newTags: [] }) }
     if (rest === '' && method === 'DELETE') { const tid = trashOne(a); emit('trash.updated', {}); return json({ trashId: tid, referrers: [] }) }
     if (rest === '/review') { a.review = body.status; a.reviewVerdict = { status: body.status, by: 'user:unnamed', at: new Date().toISOString(), ...(body.note ? { note: body.note } : {}) }; refresh(a); touched(a.id, ['review']); return json(a) }
     if (rest === '/move') { const dir = body.folder ?? a.path.slice(0, a.path.lastIndexOf('/')); if (body.name) a.name = body.name; a.path = (dir ? dir + '/' : '') + a.name; refresh(a); touched(a.id, ['path']); return json(a) }
@@ -385,12 +404,18 @@ async function handle(method: string, path: string, body: any, form: FormData | 
     if (rest === '/tags/accept') { applyTags(a, { add: body.tags }); a.autoTags = a.autoTags.filter(t => !body.tags.includes(t)); touched(a.id, ['tags']); return json(a) }
     if (rest === '/tags/dismiss') { a.autoTags = a.autoTags.filter(t => !body.tags.includes(t)); touched(a.id, ['tags']); return json(a) }
     if (rest === '/open' || rest === '/reveal') return info().isLocal ? json(undefined) : fail('not_local', '只在本机', 403)
-    if (rest === '/relations' && method === 'POST') { const t = assets.get(body.to); if (!t) return fail('not_found', 'to', 404); a.relations.outgoing.push(relView(body.type, a, t, { ...(body.slot ? { slot: body.slot } : {}) })); t.relations.incoming.push({ ...relView(body.type, a, t, {}, false), target: summary(a) }); emit('relation.updated', { from: a.id, type: body.type, to: t.id, op: 'added' }); return json(a) }
+    if (rest === '/untrack' && method === 'POST') { const tid = trashOne(a); emit('trash.updated', {}); return json({ trashId: tid, referrers: [] }) }
+    if (rest === '/relations' && method === 'POST') { const t = assets.get(body.to); if (!t) return fail('not_found', 'to', 404); a.relations.outgoing.push(relView(body.type, a, t, { ...(body.slot ? { slot: body.slot } : {}), ...(body.note ? { note: body.note } : {}), ...(body.role ? { role: body.role } : {}) })); t.relations.incoming.push({ ...relView(body.type, a, t, {}, false), target: summary(a) }); emit('relation.updated', { from: a.id, type: body.type, to: t.id, op: 'added' }); return json(a) }
     if (rest === '/relations' && method === 'DELETE') { a.relations.outgoing = a.relations.outgoing.filter(r => !(r.type === body.type && r.to === body.to)); const t = assets.get(body.to); if (t) t.relations.incoming = t.relations.incoming.filter(r => !(r.type === body.type && r.from === a.id)); a.flags = a.flags.filter(f => f !== 'broken'); refresh(a); emit('relation.updated', { from: a.id, type: body.type, to: body.to, op: 'removed' }); return json(a) }
     if (rest === '/relations/acknowledge') { a.relations.outgoing.forEach(r => { if (r.to === body.to) r.stale = false }); a.flags = a.flags.filter(f => f !== 'stale'); refresh(a); touched(a.id, ['relations']); return json(a) }
     if (rest === '/content') { a.versions.push({ hash: a.hash, size: a.size, at: new Date().toISOString(), by: 'user:unnamed' }); a.review = 'pending'; refresh(a); touched(a.id, ['content']); return json(a) }
   }
   return fail('not_found', `${method} ${path}`, 404)
+}
+
+/** How the kernel stamps a provenance it is told (ADR-070): who and when come from the request, not the client. */
+function setProvenance(a: AssetDetail, p: Record<string, unknown> | null) {
+  a.provenance = p ? { ...(p as { method: string }), ...(a.provenance?.batch && !p.batch ? { batch: a.provenance.batch } : {}), by: 'user:unnamed', at: new Date().toISOString() } : null
 }
 
 function applyTags(a: AssetDetail, e: { add?: string[]; remove?: string[]; set?: string[] }) {

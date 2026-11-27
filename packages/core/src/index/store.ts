@@ -4,7 +4,7 @@
  */
 import {
   ASSET_FLAGS, effectiveReview, firstSentence, splitName, dirOf, baseOf, normalizeTag, serializeBmeta,
-  type AssetSummary, type Bmeta, type Guid, type ProductionRecord, type TrashInfo
+  type AssetSummary, type Bmeta, type Guid, type TrashInfo
 } from '@bowerbird/schema'
 import type Database from 'better-sqlite3'
 import type { IndexDb } from '../contracts.js'
@@ -13,15 +13,15 @@ import { FLAG, ISSUE_RANK } from './ddl.js'
 export interface AssetRow {
   id: string; path: string; folder: string; name: string; stem: string; ext: string; format: string; plugin: string | null
   hash: string; size: number; mtime_ms: number; meta_mtime_ms: number; stage: string; review: string; review_status: string | null
-  bundle: number; auxiliary: number; missing: number; created_at: string; created_by: string; modified_at: string
-  description: string | null; auto_description: string | null; origin: string | null; method: string | null
+  bundle: number; auxiliary: number; missing: number; sidecar: number; created_at: string; created_by: string; modified_at: string
+  modified_by: string | null; description: string | null; auto_description: string | null; method: string | null; batch: string | null
   thumb_state: string; thumb_key: string | null; thumb_manual: number; aspect: number | null; badge: string | null
   cell_title: string | null; cell_excerpt: string | null; flags: number; issue_level: number; issue_count: number
   member_count: number; missing_plugin: string | null; meta_json: string; seq: number
 }
 
 export interface RelationRow {
-  from_id: string; type: string; to_id: string; slot: string; to_hash: string | null; record: string | null
+  from_id: string; type: string; to_id: string; slot: string; to_hash: string | null; role: string | null
   note: string | null; broken: number; stale: number
 }
 
@@ -120,20 +120,13 @@ export class IndexStore {
   meta(row: AssetRow): Bmeta { return JSON.parse(row.meta_json) as Bmeta }
   metaOf(id: string): Bmeta | null { const r = this.row(id); return r ? this.meta(r) : null }
 
-  /** Method of the record that produced the asset (origin, else the first source relation with a record). */
-  methodOf(meta: Bmeta): string | null {
-    const recId = meta.origin ?? meta.relations?.find(r => r.type === 'source' && r.record)?.record
-    if (!recId) return null
-    const r = this.prep('SELECT method FROM records WHERE id = ?').get(recId) as { method: string } | undefined
-    return r?.method ?? null
-  }
-
   /**
    * Write the meta-derived columns of an asset, its tags and its outgoing relations.
    * Pipeline-owned columns (format, plugin, thumb_key, aspect, badge, cell_*) are kept on update.
    * Relation broken/stale flags are recomputed by integrity afterwards.
+   * `sidecar`: whether a .bmeta holds this meta on disk (default: yes); without one the row is all there is (ADR-067).
    */
-  upsertAsset(a: { meta: Bmeta; path: string; size: number; mtimeMs: number; metaMtimeMs: number; missing: boolean }): void {
+  upsertAsset(a: { meta: Bmeta; path: string; size: number; mtimeMs: number; metaMtimeMs: number; missing: boolean; sidecar?: boolean }): void {
     const { meta, path } = a
     const other = this.rowByPath(path)
     if (other && other.id !== meta.id) throw new Error(`index: path ${path} already belongs to ${other.id}`)
@@ -146,23 +139,26 @@ export class IndexStore {
     const thumbManual = meta.thumbnail ? 1 : 0
     this.tx(() => {
       this.prep(`INSERT INTO assets (id, path, folder, name, stem, ext, hash, size, mtime_ms, meta_mtime_ms, stage, review, review_status,
-          bundle, auxiliary, missing, created_at, created_by, modified_at, description, auto_description, origin, method, thumb_manual,
-          thumb_state, meta_json, seq)
+          bundle, auxiliary, missing, sidecar, created_at, created_by, modified_at, modified_by, description, auto_description, method, batch,
+          thumb_manual, thumb_state, meta_json, seq)
         VALUES (@id, @path, @folder, @name, @stem, @ext, @hash, @size, @mtime, @metaMtime, @stage, @review, @reviewStatus,
-          @bundle, @auxiliary, @missing, @createdAt, @createdBy, @modifiedAt, @description, @autoDescription, @origin, @method, @thumbManual,
-          @thumbState, @metaJson, 1)
+          @bundle, @auxiliary, @missing, @sidecar, @createdAt, @createdBy, @modifiedAt, @modifiedBy, @description, @autoDescription, @method, @batch,
+          @thumbManual, @thumbState, @metaJson, 1)
         ON CONFLICT(id) DO UPDATE SET path=excluded.path, folder=excluded.folder, name=excluded.name, stem=excluded.stem, ext=excluded.ext,
           hash=excluded.hash, size=excluded.size, mtime_ms=excluded.mtime_ms, meta_mtime_ms=excluded.meta_mtime_ms, stage=excluded.stage,
           review=excluded.review, review_status=excluded.review_status, bundle=excluded.bundle, auxiliary=excluded.auxiliary,
-          missing=excluded.missing, created_at=excluded.created_at, created_by=excluded.created_by, modified_at=excluded.modified_at,
-          description=excluded.description, auto_description=excluded.auto_description, origin=excluded.origin, method=excluded.method,
+          missing=excluded.missing, sidecar=excluded.sidecar, created_at=excluded.created_at, created_by=excluded.created_by,
+          modified_at=excluded.modified_at, modified_by=excluded.modified_by, description=excluded.description,
+          auto_description=excluded.auto_description, method=excluded.method, batch=excluded.batch,
           thumb_state=CASE WHEN excluded.thumb_manual=1 THEN 'ready' WHEN assets.thumb_manual=1 THEN 'pending' ELSE assets.thumb_state END,
           thumb_manual=excluded.thumb_manual, meta_json=excluded.meta_json, seq=assets.seq+1`).run({
         id: meta.id, path, folder: dirOf(path), name, stem: base, ext: ext.toLowerCase(), hash: meta.hash, size: a.size,
         mtime: a.mtimeMs, metaMtime: a.metaMtimeMs, stage: meta.stage, review: effectiveReview(meta), reviewStatus: meta.review?.status ?? null,
-        bundle, auxiliary: meta.auxiliary ? 1 : 0, missing: a.missing ? 1 : 0, createdAt: meta.created.at, createdBy: meta.created.by,
-        modifiedAt: modifiedAtOf(meta), description: meta.description ?? null, autoDescription: meta.auto?.description ?? null,
-        origin: meta.origin ?? null, method: this.methodOf(meta), thumbManual, thumbState: thumbManual ? 'ready' : 'pending',
+        bundle, auxiliary: meta.auxiliary ? 1 : 0, missing: a.missing ? 1 : 0, sidecar: a.sidecar === false ? 0 : 1,
+        createdAt: meta.created.at, createdBy: meta.created.by, modifiedAt: modifiedAtOf(meta),
+        modifiedBy: a.sidecar === false ? null : (meta.modified?.by ?? meta.created.by), description: meta.description ?? null,
+        autoDescription: meta.auto?.description ?? null, method: meta.provenance?.method ?? null, batch: meta.provenance?.batch ?? null,
+        thumbManual, thumbState: thumbManual ? 'ready' : 'pending',
         metaJson: canonicalMetaJson(meta)
       })
       if (!path.startsWith(PARKED_PREFIX)) this.prep('DELETE FROM parked WHERE asset_id = ?').run(meta.id)
@@ -178,12 +174,12 @@ export class IndexStore {
     const old = new Map<string, RelationRow>()
     for (const r of this.outgoing(meta.id)) old.set(`${r.type}\u0000${r.to_id}\u0000${r.slot}`, r)
     this.prep('DELETE FROM relations WHERE from_id = ?').run(meta.id)
-    const ins = this.prep(`INSERT OR REPLACE INTO relations (from_id, type, to_id, slot, to_hash, record, note, broken, stale)
+    const ins = this.prep(`INSERT OR REPLACE INTO relations (from_id, type, to_id, slot, to_hash, role, note, broken, stale)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     for (const r of meta.relations ?? []) {
       const slot = r.slot ?? ''
       const prev = old.get(`${r.type}\u0000${r.to}\u0000${slot}`)
-      ins.run(meta.id, r.type, r.to, slot, r.toHash ?? null, r.record ?? null, r.note ?? null, prev?.broken ?? 0, prev?.stale ?? 0)
+      ins.run(meta.id, r.type, r.to, slot, r.toHash ?? null, r.role ?? null, r.note ?? null, prev?.broken ?? 0, prev?.stale ?? 0)
     }
   }
 
@@ -195,6 +191,9 @@ export class IndexStore {
     this.prep('UPDATE assets SET path=?, folder=?, name=?, stem=?, ext=?, seq=seq+1 WHERE id=?').run(path, dirOf(path), name, base, ext.toLowerCase(), id)
     if (!path.startsWith(PARKED_PREFIX)) this.prep('DELETE FROM parked WHERE asset_id = ?').run(id)
   }
+
+  /** Assets of one run (provenance batch). */
+  batchMembers(batch: string): string[] { return (this.prep('SELECT id FROM assets WHERE batch = ? ORDER BY path').all(batch) as Array<{ id: string }>).map(r => r.id) }
 
   setStat(id: string, s: { size?: number; mtimeMs?: number; metaMtimeMs?: number; missing?: boolean }): void {
     const sets: string[] = []
@@ -247,23 +246,6 @@ export class IndexStore {
   assetsWithTag(tag: string, ai: boolean | null): string[] {
     const sql = ai === null ? 'SELECT DISTINCT asset_id FROM tags WHERE tag = ?' : 'SELECT DISTINCT asset_id FROM tags WHERE tag = ? AND ai = ' + (ai ? 1 : 0)
     return (this.prep(sql).all(tag) as Array<{ asset_id: string }>).map(r => r.asset_id)
-  }
-
-  /* ───────────── records ───────────── */
-
-  upsertRecord(rec: ProductionRecord): void {
-    this.prep(`INSERT INTO records (id, method, by, at, prompt, json) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET method=excluded.method, by=excluded.by, at=excluded.at, prompt=excluded.prompt, json=excluded.json`)
-      .run(rec.id, rec.method, rec.by, rec.at, rec.prompt ?? null, JSON.stringify(rec))
-  }
-  record(id: string): ProductionRecord | null {
-    const r = this.prep('SELECT json FROM records WHERE id = ?').get(id) as { json: string } | undefined
-    return r ? JSON.parse(r.json) as ProductionRecord : null
-  }
-  recordOutputs(id: string): string[] {
-    const a = (this.prep('SELECT id FROM assets WHERE origin = ?').all(id) as Array<{ id: string }>).map(r => r.id)
-    const b = (this.prep('SELECT DISTINCT from_id id FROM relations WHERE record = ?').all(id) as Array<{ id: string }>).map(r => r.id)
-    return [...new Set([...a, ...b])]
   }
 
   /* ───────────── files (scan shortcut) ───────────── */
@@ -353,6 +335,7 @@ export function rowToSummary(store: IndexStore, row: AssetRow, thumbnailUrl: (id
     created: row.created_at, createdBy: row.created_by, bundle: !!row.bundle, auxiliary: !!row.auxiliary, memberCount: row.member_count,
     cellText: row.cell_title || row.cell_excerpt ? { ...(row.cell_title ? { title: row.cell_title } : {}), ...(row.cell_excerpt ? { excerpt: row.cell_excerpt } : {}) } : null,
     missingPlugin,
-    ...(hasViews ? { hasViews: true } : {})
+    ...(hasViews ? { hasViews: true } : {}),
+    ...(row.sidecar ? { metaPath: row.path + '.bmeta' } : {})
   }
 }

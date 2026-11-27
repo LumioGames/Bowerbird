@@ -8,7 +8,7 @@ metadata:
 
 # 资产库格式
 
-一个资产库就是一个根文件夹：正常的目录树、原始文件名，每个资产旁边放一份同名的元数据文件。这份格式是公开的，人和 Agent 不经过 Bowerbird 也能读懂。
+一个资产库就是一个根文件夹：正常的目录树、原始文件名。有人给一个文件记下过信息，它旁边才有一份同名的元数据文件（ADR-067）。这份格式是公开的，人和 Agent 不经过 Bowerbird 也能读懂。
 
 ## 背景 / 目标
 
@@ -27,7 +27,6 @@ MyLibrary/
 │   ├── library.json                  库标识、格式版本、启用的插件、库设置
 │   ├── tags.json                     标签定义
 │   ├── views/                        智能文件夹（保存的查询）
-│   ├── records/                      生产记录
 │   ├── thumbs/                       手动指定的缩略图
 │   ├── trash/                        回收站
 │   └── cache/                        缩略图、预览文件与摘要文字，可重新生成，随资产库同步
@@ -37,8 +36,7 @@ MyLibrary/
 │   └── chest/
 │       ├── chest.md                  设计对象“宝箱”的说明文档
 │       ├── chest.md.bmeta
-│       ├── chest_concept.png
-│       ├── chest_concept.png.bmeta
+│       ├── chest_concept.png             没人记过信息的文件：没有元数据文件
 │       ├── chest.glb
 │       └── chest.glb.bmeta
 └── ui/
@@ -53,10 +51,24 @@ MyLibrary/
 - 资产库里的文件夹就是用户看到的文件夹，没有另一套虚拟层级。一个资产只在一个文件夹里；跨文件夹的归类用标签和智能文件夹。
 - 元数据文件名是“资产文件名加 `.bmeta`”，与资产放在同一目录。不使用 `.meta` 后缀，避免与 Unity 的同名文件冲突。
 - 资产库根目录由 `.bowerbird/library.json` 的存在来识别。
+- 初始化资产库只写 `.bowerbird/`，不在任何文件旁边写东西（ADR-067）。
 
 ### 元数据文件
 
-每个资产一份，UTF-8 编码的 JSON，键按固定顺序输出、两空格缩进，便于比对和纳入版本控制。
+关于一个文件的信息分两种（ADR-067）：
+
+- **能从文件算出来的**：文件名、大小、格式、技术信息、内容指纹、缩略图。只进索引。
+- **算不出来、只能由人或 Agent 告诉的**：标签、描述、阶段、关系、出处、校验结论、版本记录、手动缩略图、四视图的格子、自定义字段、AI 产出。只有这一种写进元数据文件。
+
+**何时存在**
+
+- 扫描器看见一个文件时，只把它放进索引，不写元数据文件。这样的文件称为「只被看见的文件」。它照样能浏览、搜索、预览、生成缩略图、被关系指向。
+- 第一次有算不出来的信息要记下时，才写元数据文件。GUID 沿用索引里给它的那个（ADR-074）。
+- 一个文件被别的资产的关系指向时，也写它的元数据文件：这时它的 GUID 有了意义。
+- 算不出来的信息全部去掉之后，元数据文件留着，不删。
+- 「登记」只指有人给文件记下了信息。扫描器看见文件不叫登记。
+
+元数据文件是 UTF-8 编码的 JSON，键按固定顺序输出、两空格缩进，便于比对和纳入版本控制。
 
 ```jsonc
 {
@@ -76,7 +88,8 @@ MyLibrary/
     "hash": "sha256:9c1e…"                        // 产出时对应的内容指纹
   },
   "relations": [
-    { "type": "source",  "to": "<四视图 GUID>", "toHash": "sha256:…", "record": "rec_0192…" },
+    { "type": "source",  "to": "<四视图 GUID>", "toHash": "sha256:…", "role": "四视图" },
+    { "type": "reference", "to": "<原型截图 GUID>", "toHash": "sha256:…", "role": "参考图" },
     { "type": "uses",    "to": "<贴图 GUID>", "slot": "chest_basecolor.png" },   // slot：模型文件里写的位置名
     { "type": "belongs", "to": "<chest.md GUID>" }
   ],
@@ -94,7 +107,17 @@ MyLibrary/
   "auxiliary": false,                             // 是否为附属文件
   "bundle": false,                                // 是否为包式资产
   "thumbnail": null,                              // 手动缩略图的文件名，位于 .bowerbird/thumbs/
-  "origin": "rec_0192…",                          // 产出它的生产记录（ADR-027），没有时省略
+  "provenance": {                                 // 出处：它是怎么做出来的（ADR-070），没有时省略
+    "method": "ai-generate",
+    "tool": "gpt-image-1",
+    "plugin": "studio.imagegen@1.0.0",            // 插件产出时由内核填写
+    "prompt": "卡通木质宝箱，金属包边",
+    "params": { "model": "gpt-image-1", "seed": 42 },
+    "batch": "bat_0192…",                         // 同一次产出的资产共用一个批次号
+    "by": "agent:modeler",
+    "at": "2026-11-20T03:12:00Z",
+    "note": ""
+  },
   "created":  { "at": "2026-11-20T03:12:00Z", "by": "agent:modeler" },
   "modified": { "at": "2026-11-25T08:30:00Z", "by": "user:cui" }
 }
@@ -103,7 +126,10 @@ MyLibrary/
 **字段约定**
 
 - 必填：`bb`、`id`、`hash`、`stage`、`created`。其余缺省时按空值处理。
-- 顶层字段按这个顺序写出：`bb`、`id`、`hash`、`stage`、`tags`、`description`、`fields`、`auto`、`relations`、`review`、`versions`、`auxiliary`、`bundle`、`thumbnail`、`views`、`origin`、`created`、`modified`，不认识的字段跟在后面。
+- 顶层字段按这个顺序写出：`bb`、`id`、`hash`、`stage`、`tags`、`description`、`fields`、`auto`、`relations`、`review`、`versions`、`auxiliary`、`bundle`、`thumbnail`、`views`、`provenance`、`created`、`modified`，不认识的字段跟在后面。
+- `provenance` 里的键按 `method`、`tool`、`plugin`、`prompt`、`params`、`batch`、`by`、`at`、`note` 写出。
+- `provenance` 的输入不写在出处里：用了哪些资产，由来源关系与参考关系表达，关系上带 `role` 和对方当时的指纹（ADR-070）。
+- `created` 记第一次写元数据文件的时间与执行者。只被看见的文件不记创建者，创建时间用文件自己的时间。
 - `bb` 不是 1 的元数据文件按解析不了处理，登记「元数据冲突」。
 - `fields` 里以 `bowerbird.` 开头的命名空间留给内核（ADR-051）：
   - `bowerbird.identity`：重复身份待确认，`{ copiedFrom, at, confirmed, reason, originalPath, copyPath }`；
@@ -155,14 +181,14 @@ MyLibrary/
 - `description` 是备注，显示在检查器的文件夹信息里。
 - 这三项只作用于该文件夹本身，不向下继承；在检查器的文件夹形态里编辑。
 - 默认值逐项向上继承：某一项在当前文件夹没有设置，就取最近的上级文件夹的设置。
-- 默认值只在资产被认领时生效一次，之后改文件夹设置不会回头修改已有资产。
+- 默认值在第一次看见文件时算进它在索引里的信息；写元数据文件时随之写入（ADR-074）。之后改文件夹设置不会回头修改已有资产。
 
 ### 包式资产
 
 一个文件夹作为一个资产时：
 
 - 元数据文件放在该文件夹的**旁边**，名为“文件夹名加 `.bmeta`”，其中 `bundle` 为 `true`。
-- 扫描器遇到带这种元数据文件的文件夹时，把它当成一个整体，不再进入内部逐个认领。
+- 扫描器遇到带这种元数据文件的文件夹时，把它当成一个整体，不再进入内部逐个看。
 - 内容指纹是目录指纹：包内每个文件写成「相对路径 空格 文件指纹」一行，排序后连起来再算指纹。内置忽略规则在包内照样生效，`.bbignore` 不进包内。
 - 包式资产只能通过界面或接口显式创建，扫描器不会自动把普通文件夹判定为包。创建时（ADR-041、ADR-051）：
   - 里面各资产的元数据文件与包文件夹自己的 `_folder.bmeta` 移入回收站；
@@ -182,7 +208,6 @@ MyLibrary/
 | `library.json` | 库的 GUID、名称、格式版本、需要的插件及版本范围、库设置 | 是 |
 | `tags.json` | 标签定义：分组、颜色、别名 | 是 |
 | `views/<名称>.json` | 智能文件夹，即保存的查询条件 | 是 |
-| `records/<年份>/<记录标识>.json` | 生产记录，一条一个文件 | 是 |
 | `thumbs/<GUID>.webp` | 手动指定的缩略图 | 是 |
 | `trash/<回收标识>/` | 被删除的资产文件、其元数据文件、说明 `info.json` | 是 |
 | `cache/` | 缩略图、预览文件、Agent 摘要文字 | 否，可删除重建；随资产库同步 |
@@ -201,19 +226,20 @@ MyLibrary/
   "bundle": false,
   "batch": "<批次>",        // 一次删除文件夹移入的项共用一个批次
   "recordOnly": false,      // true：只有元数据文件（缺失资产、被替下的元数据文件）
-  "kind": "sidecar"         // 单独的元数据文件为 sidecar，文件夹设置为 folder-meta；资产省略
+  "seen": false,            // true：只被看见的文件，恢复时只回来文件，不生出元数据文件
+  "kind": "sidecar"         // 单独的元数据文件（被替下的、移出资产库的）为 sidecar，文件夹设置为 folder-meta；资产省略
 }
 ```
 
-**生产记录文件**：UTF-8 编码的 JSON，一条记录一个文件，字段与 [`data-model.md`](data-model.md) 的“生产记录”一节相同：`bb`、`id`、`method`、`tool`、`plugin`、`prompt`、`params`、`inputs`、`by`、`at`、`note`、`notes`。
+**旧资产库的生产记录**：出处写在各个资产自己的元数据文件里（ADR-070），库级数据里没有单独的生产记录。带 `.bowerbird/records/` 的旧资产库在第一次全库扫描之后自动转换一次（ADR-074）：
 
-- `method` 是开放值，插件自定义的值以插件标识作前缀。
-- `plugin` 是插件标识加版本，由内核填写；库外登记的记录没有它。
-- `params` 约定三个常用键 `model`、`seed`、`negativePrompt`，其余键自由。
-- `inputs` 的每一项可以带 `role`，说明这个输入的角色。
-- 文件里不列产出。一条记录产出了哪些资产，由 `origin` 等于它的资产，加上来源关系的 `record` 指向它的资产反查（ADR-027）。
-- 通过 `POST /records` 建的记录立即写出。创建与动作任务的记录在登记第一个产出时写出，没有任何产出的运行不写记录文件。
-- 文件写入后不再修改，只能在 `notes` 里追加备注。
+- 每条记录的内容写进它的各个产出的 `provenance`；
+- 记录的输入变成产出的来源关系，带上原来的 `role`；
+- 多个产出共用一条记录时，记录号变成它们共同的批次号；
+- 切图按产出分开的区域，拆给各自的产出，写成 `params.rect`；
+- 追加的备注合并进 `note`；
+- 元数据文件里的 `origin` 与关系上的 `record` 去掉；
+- `.bowerbird/records/` 改名为 `records-converted-<日期>`，不删。
 
 `library.json` 示例：
 
@@ -269,15 +295,22 @@ MyLibrary/
 
 ### 忽略规则
 
-以下内容不会被认领为资产：
+以下内容不进资产库：
 
 - 内置忽略：`.bowerbird/`、`*.bmeta`、`_folder.bmeta`、`.bbignore`、以点开头的文件和目录、`Thumbs.db`、`desktop.ini`、`~$*`、`*.tmp`、`*.part`、`*.crdownload`。
 - 资产库根目录的 `.bbignore`，语法与 `.gitignore` 相同。
+
+忽略规则改了之后（ADR-067）：
+
+- 只被看见的文件被规则命中：直接从索引里消失。
+- 有元数据文件的资产被规则命中：自动移出资产库。文件不动，元数据文件移入回收站。引用它的资产显示断链，与删除资产时一致。规则仍命中时不让恢复，提示先改 `.bbignore`（ADR-074）。
+- 命令 `bb untrack` 与接口 `POST /assets/{id}/untrack` 手动做同样的事：移出资产库、不动文件。移出后文件仍在，下一次扫描把它当成只被看见的文件。
 
 ### 格式版本与迁移
 
 - `bb` 字段是格式版本号，当前为 `1`。
 - 只增加可选字段不升版本号。改变已有字段含义才升版本号，并随版本提供一次性迁移命令。
+- `provenance` 是新增的可选字段，版本号不升：旧版本读到不认识的字段会原样保留（ADR-074）。
 - `library.json` 的版本号高于自己支持的版本时，Bowerbird 以只读方式打开该资产库并提示升级；写操作返回 `read_only`。
 
 ### 云盘冲突副本的命名
@@ -302,5 +335,5 @@ MyLibrary/
 - 字段语义：[`data-model.md`](data-model.md)。
 - 外部改动如何被收进来：[`sync-and-integrity.md`](sync-and-integrity.md)。
 - 缓存的生成与失效：[`pipeline-and-cache.md`](pipeline-and-cache.md)。
-- 决策：ADR-008、ADR-012、ADR-016、ADR-017、ADR-018、ADR-019、ADR-022、ADR-025、ADR-026、ADR-027、ADR-028、ADR-041、ADR-044、ADR-048、ADR-051、ADR-052。
+- 决策：ADR-008、ADR-012、ADR-016、ADR-017、ADR-018、ADR-019、ADR-022、ADR-025、ADR-026、ADR-028、ADR-041、ADR-044、ADR-048、ADR-051、ADR-052、ADR-067、ADR-070、ADR-073、ADR-074。
 - 已有答案的原待解决项：云盘冲突副本的命名见上文与 ADR-051。

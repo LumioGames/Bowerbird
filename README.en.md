@@ -14,8 +14,8 @@ An art team's assets end up scattered across personal drives, cloud folders and 
 
 Bowerbird keeps images, video, audio, 3D models and documents in one folder, for people to browse, preview, review and trace, and for agents to search, register and fetch.
 
-- **The folder is the library.** Assets stay in your own folder, each with a small `.bmeta` sidecar next to it. The index and thumbnails can always be rebuilt from the folder, and the whole folder syncs with any cloud drive, NAS or Git. Nothing is locked into Bowerbird.
-- **Every asset knows where it came from.** Three relation types plus production records: concept → turnaround → model → icon is traceable end to end; when an upstream asset changes, everything made from it is told "upstream updated"; AI output records its prompt, model and inputs.
+- **The folder is the library.** Assets stay in your own folder. Once you record tags, relations or provenance for a file, a small `.bmeta` sidecar appears next to it; files nobody has said anything about get nothing written beside them. The index and thumbnails can always be rebuilt from the folder, and the whole folder syncs with any cloud drive, NAS or Git. Nothing is locked into Bowerbird.
+- **Every asset knows where it came from.** Four relation types plus provenance: concept → turnaround → model → icon is traceable end to end; when an upstream asset changes, everything made from it is told "upstream updated", while assets that only used it as a reference are not; AI output records its prompt, model and inputs, and a wrong entry can be corrected.
 - **People and agents share one interface.** HTTP API, event stream, MCP and the `bb` CLI. Every write records who did it (`user:lin`, `agent:modeler`). Agents produce, people review in the browser, and only approved assets go to runtime.
 
 ## Screenshots
@@ -51,7 +51,7 @@ npm install -g bowerbird
 bb serve ~/Art/my-game
 ```
 
-Then open <http://127.0.0.1:7420>. If the folder already has files in it, the page first explains what the first open will do and only starts registering after you confirm.
+Then open <http://127.0.0.1:7420>. If the folder already has files in it, the page first explains what the first open will do and only starts reading after you confirm. Reading changes no files and writes nothing next to them.
 
 Without a global install: `npx bowerbird serve ~/Art/my-game`. Running from source, local tarballs and Docker are covered in the [usage guide](docs/usage.md).
 
@@ -61,15 +61,16 @@ Send the repository URL `https://github.com/LumioGames/Bowerbird` to your agent 
 
 1. **Check Node**: `node --version` must be ≥ 22.12. If it is older, tell the user to upgrade; do not replace the system Node yourself.
 2. **Install**: `npm install -g bowerbird`. Without permission for global installs, use `npx -y bowerbird` wherever `bb` appears below.
-3. **Initialise the library**: `bb init <library folder>`. This writes a `.bmeta` next to every file, so tell the user before running it. A missing folder becomes a new empty library.
-4. **Start the server** (long-running, in the background): `bb serve <library folder>`. It listens on `127.0.0.1:7420` by default; give the user the address.
-5. **Check it works**: `bb health --json` lists integrity issues, and `bb search <keyword> --json` should return assets.
+3. **Initialise the library**: `bb init <library folder>`. It writes only the `.bowerbird/` folder and nothing next to any file; a file gets a `.bmeta` once something is recorded about it. A missing folder becomes a new empty library.
+4. **Check it works**: inside the library folder, run `bb health --json` and `bb search <keyword> --json`; both should answer. No server is needed: when none is running, a command opens the library itself and exits when done. Outside the library folder, add `--library <library name>`.
+5. **Let people look** (optional): `bb serve <library folder>`, long-running, listening on `127.0.0.1:7420` by default; give the user the address. While it runs, commands use it, which is faster on large libraries; thumbnails are made by it too.
 6. **Connect MCP**: in Claude Code run
    ```bash
-   claude mcp add bowerbird -e BOWERBIRD_URL=http://127.0.0.1:7420 -- bb mcp --name <your-name>
+   claude mcp add bowerbird -- bb mcp --name <your-name> --library <library name>
    ```
-   Other clients are covered in the [usage guide](docs/usage.md#mcp给-agent-用). Then use the ten tools (`bb_search`, `bb_get`, `bb_trace`, `bb_register`, …) to search, trace and register assets.
-7. **Don't**: don't add `--host 0.0.0.0` to open the server to the LAN unless the user asks for it (Bowerbird has no login). When registering AI output, pass `--source` and `--prompt` so the lineage and production record are complete. MCP has no delete tool; deleting is left to people in the browser.
+   Other clients are covered in the [usage guide](docs/usage.md#mcp给-agent-用). The tools come from the same definitions as the `bb` commands: `bb_search`, `bb_get`, `bb_trace`, `bb_add`, `bb_apply` and nine more.
+7. **Register in bulk**: write what each file should have as a JSONL manifest, one item per line; run `bb apply manifest.jsonl --dry-run` to see what would change, then without `--dry-run` to write it. Running the same manifest again writes nothing.
+8. **Don't**: don't add `--host 0.0.0.0` to open the server to the LAN unless the user asks for it (Bowerbird has no login). When registering AI output, pass `--source` (made from it) or `--reference` (only looked at it, e.g. a screenshot that gets retaken) and `--prompt`, so lineage and provenance are complete. MCP has no delete tool; deleting is left to people in the browser. When done, `bb changes --by agent:<your-name>` lists the assets you changed and the files to commit.
 
 ## Features
 
@@ -81,7 +82,7 @@ Send the repository URL `https://github.com/LumioGames/Bowerbird` to your agent 
 | Folders and smart folders | Folders carry a display name, icon and defaults (stage, review-free, tags); smart folders save a set of filters |
 | Search | Keywords plus structured syntax: `stage:runtime format:model "tris:<5000" tag:chest -tag:deprecated review:approved`; facets; semantic search via plugins |
 | Tags | Groups, colours, aliases, rename and merge; AI-suggested tags stay apart from human ones until accepted |
-| Upload and registration | Drop files in to register them; on name clashes choose new version, keep both or skip; files added to the folder outside Bowerbird are claimed by the scanner |
+| Upload and registration | Drop files in to register them; on name clashes choose new version, keep both or skip; files added to the folder outside Bowerbird are picked up by the scanner, which writes nothing |
 
 ### Preview and compare
 
@@ -97,9 +98,9 @@ Send the repository URL `https://github.com/LumioGames/Bowerbird` to your agent 
 
 | Feature | Details |
 |---------|---------|
-| Three relation types | Source (what it was made from), uses (what it needs, e.g. a model's textures), belongs (which design object it is part of) |
+| Four relation types | Source (what it was made from), reference (what it was made looking at; no alert when that changes), uses (what it needs, e.g. a model's textures), belongs (which design object it is part of) |
 | Relation graph | Upstream and downstream on one screen; stale upstreams and broken links have their own line styles; swap a reference target in place |
-| Production records | Method, tool, prompt, parameters, input assets and their content hashes at the time |
+| Provenance | Method, tool, prompt, parameters, batch id; kept in the asset's own `.bmeta` and correctable; inputs are its source and reference relations, with the inputs' content hashes at the time |
 | Version records | Every content change records its hash, time, actor and note; keeping old content is up to a version-store plugin |
 
 ### Review and integrity
@@ -116,10 +117,11 @@ Send the repository URL `https://github.com/LumioGames/Bowerbird` to your agent 
 | Feature | Details |
 |---------|---------|
 | HTTP API | `/api/v1`, multiple libraries, one error model; SSE event stream for changes |
-| MCP | Ten tools: search, get, trace, register, update, fetch, creators, create, vocabulary, health |
-| CLI | `bb search / get / trace / add / tag / export / health / rescan / rm / plugin / mcp`, all with `--json` |
+| MCP | Fourteen tools: search, get, trace, add, apply, tag, retarget, export, health, changes, rescan, create, action, vocabulary; none deletes |
+| CLI | `bb search / get / trace / add / apply / tag / retarget / export / health / resolve / changes / rescan / rm / untrack / create / action / vocabulary`, generated from the same definitions as MCP, plus `init / serve / plugin / mcp`; all with `--json`; work without a running server |
 | Audit trail | Every write records its actor; agent searches can be limited to approved assets |
-| Creation | AI services plug in as plugins; their output is registered with a production record and source relations |
+| Wanted-state writes | Say what an asset should have and only the difference is written: one manifest for a batch, `--dry-run` to preview, safe to re-run |
+| Creation | AI services plug in as plugins; their output is registered with provenance and source relations |
 
 ### Plugins
 
@@ -160,7 +162,7 @@ pnpm serve:xingluo                        # generate a copy of the sample librar
 | `packages/core` | Kernel: libraries, scan reconciliation, index, queries, job pipeline, plugin host |
 | `packages/server` | HTTP API, event stream, serves the web shell |
 | `packages/web` | Web shell (React, Tailwind, three.js) |
-| `packages/cli`, `packages/mcp` | `bb` CLI and MCP server |
+| `packages/cli`, `packages/mcp` | `bb` CLI, the capability table shared by the CLI and MCP, MCP server |
 | `packages/plugin-sdk`, `packages/plugin-build` | Plugin SDK and plugin build tool |
 | `packages/bowerbird` | The npm package users install, with the built-in plugins and the built web shell |
 | `plugins/` | The six built-in plugins |

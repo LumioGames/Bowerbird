@@ -1,7 +1,7 @@
 /** Read models built from the index (AssetDetail, RelationView, Issue). */
 import {
   versionNumberOf, type AssetDetail, type AssetSummary, type Bmeta, type CheckView, type Guid, type Issue, type IssueType,
-  type JobStatus, type PipelineStage, type ProductionRecord, type RelationView
+  type JobStatus, type PipelineStage, type RelationView
 } from '@bowerbird/schema'
 import type { QueryEngine } from '../contracts.js'
 import { rowToSummary, type AssetRow, type IndexStore, type IssueRow } from '../index/store.js'
@@ -58,12 +58,6 @@ export function summaries(d: ViewDeps, ids: Guid[]): AssetSummary[] {
 
 export function summaryOf(d: ViewDeps, id: Guid): AssetSummary | null { return summaries(d, [id])[0] ?? null }
 
-/** The production record that made an asset: origin, else the first source relation with a record. */
-export function recordOf(store: IndexStore, meta: Bmeta): ProductionRecord | null {
-  const id = meta.origin ?? meta.relations?.find(r => r.type === 'source' && r.record)?.record
-  return id ? store.record(id) : null
-}
-
 function targetSizeOf(store: IndexStore, id: Guid, meta: Bmeta): AssetDetail['targetSize'] {
   const from = (aid: Guid): AssetDetail['targetSize'] => {
     const t = store.tech(aid)
@@ -114,7 +108,7 @@ export async function buildDetail(d: ViewDeps, row: AssetRow): Promise<AssetDeta
     const view: RelationView = {
       type: r.type, from: id, to: r.to, target, targetName: n.name, targetInTrash: n.inTrash,
       ...(r.slot ? { slot: r.slot } : {}), ...(r.note ? { note: r.note } : {}), ...(r.toHash ? { toHash: r.toHash } : {}),
-      ...(r.record ? { record: r.record } : {}),
+      ...(r.role ? { role: r.role } : {}),
       broken: st ? !!st.broken : !target, stale: st ? !!st.stale : false
     }
     if (view.stale && target && r.toHash) {
@@ -132,7 +126,7 @@ export async function buildDetail(d: ViewDeps, row: AssetRow): Promise<AssetDeta
     return {
       type: r.type, from: r.from_id, to: id, target: sums.get(r.from_id) ?? null, targetName: n.name, targetInTrash: n.inTrash,
       ...(r.slot ? { slot: r.slot } : {}), ...(r.note ? { note: r.note } : {}), ...(r.to_hash ? { toHash: r.to_hash } : {}),
-      ...(r.record ? { record: r.record } : {}), broken: false, stale: !!r.stale
+      ...(r.role ? { role: r.role } : {}), broken: false, stale: !!r.stale
     }
   })
 
@@ -168,15 +162,14 @@ export async function buildDetail(d: ViewDeps, row: AssetRow): Promise<AssetDeta
     versions: meta.versions ?? [],
     views: meta.views ?? null,
     thumbnailManual: !!meta.thumbnail,
-    origin: meta.origin ?? null,
-    modifiedBy: meta.modified?.by ?? null,
+    provenance: meta.provenance ?? null,
+    modifiedBy: row.sidecar ? (meta.modified?.by ?? null) : null,
     tech: store.tech(id),
     analysis,
     unresolvedRefs,
     checks,
     relations: { outgoing, incoming },
     issues: store.issuesOf(id).map(issueView),
-    record: recordOf(store, meta),
     bundleFiles,
     targetSize: targetSizeOf(store, id, meta),
     stages: [...stageMap.values()]

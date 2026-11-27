@@ -14,12 +14,14 @@ export interface AssetRow {
   thumb_state: string; thumb_key: string | null; thumb_manual: number; aspect: number | null; badge: string | null
   cell_title: string | null; cell_excerpt: string | null; flags: number; issue_level: number; issue_count: number
   member_count: number; missing_plugin: string | null; seq: number; meta_json: string
+  /** 1 = has a .bmeta (ADR-067); absent in rows read by older queries = assume it has one. */
+  sidecar?: number
 }
 
 const COLUMNS = `a.id, a.path, a.folder, a.name, a.stem, a.ext, a.format, a.plugin, a.hash, a.size, a.stage, a.review, a.bundle,
   a.auxiliary, a.missing, a.created_at, a.created_by, a.modified_at, a.description, a.auto_description, a.thumb_state,
   a.thumb_key, a.thumb_manual, a.aspect, a.badge, a.cell_title, a.cell_excerpt, a.flags, a.issue_level, a.issue_count, a.member_count,
-  a.missing_plugin, a.seq, a.meta_json`
+  a.missing_plugin, a.seq, a.meta_json, a.sidecar`
 
 const LEVELS = [null, 'info', 'warning', 'error'] as const
 
@@ -104,7 +106,8 @@ export function rowToSummary(r: AssetRow, tags: string[], autoTags: string[], th
       ? { ...(r.cell_title != null ? { title: r.cell_title } : {}), ...(r.cell_excerpt != null ? { excerpt: r.cell_excerpt } : {}) }
       : null,
     missingPlugin: parseMissingPlugin(r.missing_plugin),
-    ...(hasViews ? { hasViews: true } : {})
+    ...(hasViews ? { hasViews: true } : {}),
+    ...(r.sidecar !== 0 && !r.path.startsWith('.bowerbird/') ? { metaPath: r.path + '.bmeta' } : {})
   }
 }
 

@@ -8,7 +8,7 @@ import { t } from '../i18n.js'
 export const MODES = ['side', 'wipe', 'overlay', 'diff'] as const
 /** copy.md「四视图」. */
 export const REASON_ASPECT = '两张图的比例不一样，差异看不出东西'
-/** ADR-036: a slice whose record has no `rect` can only sit next to its source. */
+/** ADR-036: a slice whose provenance has no `rect` can only sit next to its source. */
 export const REASON_SLICE_NO_RECT = '这张切图没有记下它在原图上的区域，只能并排'
 /** Aspect ratios further apart than this make the pixel difference meaningless (5 %). */
 export const ASPECT_TOLERANCE = 0.05
@@ -24,7 +24,7 @@ export function aspectDifference(a: Size, b: Size): number {
 }
 export function aspectsDiffer(a: Size, b: Size): boolean { return aspectDifference(a, b) > ASPECT_TOLERANCE }
 
-type AssetLike = Pick<AssetDetail, 'id' | 'format' | 'tech' | 'record' | 'relations'>
+type AssetLike = Pick<AssetDetail, 'id' | 'format' | 'tech' | 'provenance' | 'relations'>
 
 export function sizeOf(a: Pick<AssetDetail, 'tech'>): Size | null {
   const w = Number(a.tech?.width), h = Number(a.tech?.height)
@@ -36,23 +36,17 @@ function isRect(v: unknown): v is PxRect {
 }
 
 /**
- * The slice's region from `params.rect` (ADR-036): `[x, y, w, h]` when the record has one output, or
- * `{ "<output GUID>": [x, y, w, h], … }` when one record cut several images.
+ * The slice's region from its own provenance, `params.rect` (ADR-036, ADR-070): `[x, y, w, h]`. Every output of a
+ * run has its own provenance, so there is only this one form.
  */
-export function rectFor(rect: unknown, sliceId: string): PxRect | null {
-  if (isRect(rect)) return [...rect] as PxRect
-  if (rect && typeof rect === 'object' && !Array.isArray(rect)) {
-    const own = (rect as Record<string, unknown>)[sliceId] ?? (rect as Record<string, unknown>)[sliceId.toLowerCase()]
-    if (isRect(own)) return [...own] as PxRect
-  }
-  return null
+export function rectFor(rect: unknown): PxRect | null {
+  return isRect(rect) ? [...rect] as PxRect : null
 }
 
-/** Whether `slice` was cut out of `source`: its record is a slice whose inputs (or source relations) name it. */
+/** Whether `slice` was cut out of `source`: its provenance is a slice and its source relation names it. */
 function slicedFrom(slice: AssetLike, source: AssetLike): boolean {
-  const rec = slice.record
-  if (!rec || !(rec.method === 'slice' || rec.method.endsWith('/slice'))) return false
-  if (rec.inputs?.some(i => i.id === source.id)) return true
+  const p = slice.provenance
+  if (!p || !(p.method === 'slice' || p.method.endsWith('/slice'))) return false
   return slice.relations?.outgoing?.some(r => r.type === 'source' && r.to === source.id) ?? false
 }
 
@@ -61,13 +55,13 @@ export type SliceCrop =
   | { crop: null; missingRect: true }
 
 /**
- * A slice compared with the picture it was cut from (ADR-036): the picture side is cropped to the record's
+ * A slice compared with the picture it was cut from (ADR-036): the picture side is cropped to the slice's
  * `params.rect`; without one, only side by side. Null when the pair is not a slice and its source.
  */
 export function sliceCrop(left: AssetLike, right: AssetLike): SliceCrop | null {
   for (const [slice, source, crop] of [[left, right, 'right'], [right, left, 'left']] as const) {
     if (!slicedFrom(slice, source)) continue
-    const rect = rectFor(slice.record?.params?.rect, slice.id)
+    const rect = rectFor(slice.provenance?.params?.rect)
     return rect ? { crop, rect } : { crop: null, missingRect: true }
   }
   return null

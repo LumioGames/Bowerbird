@@ -210,9 +210,19 @@ const F_MODEL_TECH: Matcher[] = ['目标尺寸', '# × # × # m', '源文件']
  */
 const MODEL_PANEL_EXTRA: Matcher[] = ['色调', 'ACES', 'AgX', '中性', '无', 'radiogroup "色调映射"', /^radio "(ACES|AgX|中性|无)"$/, 'slider "主光方向"']
 
+/**
+ * ADR-070: what the prototype calls「生产记录」is the asset's own 出处 in the product; a relation row's second line
+ * names the input's role (源文件, 模型) and the 出处 note line shows its date. The prototype keeps the old words until
+ * it is redrawn.
+ */
+const PROVENANCE_APP: Matcher[] = ['出处', 'heading "出处"', /^(导出|渲染) · (user|agent):[^·]+ · .+$/, /^user:lin · ‹日期›$/]
+const PROVENANCE_PROTO: Matcher[] = ['生产记录', 'heading "生产记录"', /^(导出|渲染) · (user|agent):\S+$/, 'user:lin']
+/** ADR-073: the graph's legend has the「参考」relation the prototype does not draw yet. */
+const REFERENCE_LEGEND: Matcher[] = ['参考']
+
 const KNOWN: Record<string, Known> = {
   browse: { onlyApp: [...RENDERING, ...DATA], onlyProto: [...RENDERING, ...DATA, ...ICON_ONLY_FOOTER], rolesOnlyApp: [...NAMED_ROLES, ...ICON_ONLY_FOOTER], rolesOnlyProto: [...NAMED_ROLES, ...ICON_ONLY_FOOTER] },
-  inspector: { onlyApp: [...RENDERING, ...DATA, ...F_MODEL_TECH], onlyProto: [...RENDERING, ...DATA, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER], rolesOnlyApp: [...NAMED_ROLES, ...ICON_ONLY_FOOTER], rolesOnlyProto: [...NAMED_ROLES, ...INSPECTOR_REL_ROWS, ...ICON_ONLY_FOOTER] },
+  inspector: { onlyApp: [...RENDERING, ...DATA, ...F_MODEL_TECH, ...PROVENANCE_APP], onlyProto: [...RENDERING, ...DATA, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER, ...PROVENANCE_PROTO], rolesOnlyApp: [...NAMED_ROLES, ...ICON_ONLY_FOOTER], rolesOnlyProto: [...NAMED_ROLES, ...INSPECTOR_REL_ROWS, ...ICON_ONLY_FOOTER] },
   detail: {
     onlyApp: [...MODEL_PANEL_EXTRA], onlyProto: [],
     rolesOnlyApp: [...MODEL_PANEL_EXTRA],
@@ -221,11 +231,11 @@ const KNOWN: Record<string, Known> = {
   },
   graph: {
     // no version timeline:「v1 时的关系」has no data source in phase one (P1-6); the centre shows version · note · day+time
-    onlyApp: [...DATA, ...RENDERING, /^v# · 修正包边比例 · /], onlyProto: [...DATA, 'v#', '‹日期›', '当前', /^v# · 修正包边比例 · /],
+    onlyApp: [...DATA, ...RENDERING, /^v# · 修正包边比例 · /, ...REFERENCE_LEGEND], onlyProto: [...DATA, 'v#', '‹日期›', '当前', /^v# · 修正包边比例 · /],
     rolesOnlyProto: ['toolbar "详情"']
   },
   'compare-sheet': { onlyApp: ['chest.glb · chest_turnaround.png · 正', ...RENDERING], rolesOnlyApp: [...NAMED_ROLES] },
-  review: { onlyApp: [...MODEL_PANEL_EXTRA, ...DATA, ...RENDERING], onlyProto: [...DATA], rolesOnlyApp: [...MODEL_PANEL_EXTRA] },
+  review: { onlyApp: [...MODEL_PANEL_EXTRA, ...DATA, ...RENDERING, ...PROVENANCE_APP], onlyProto: [...DATA, ...PROVENANCE_PROTO], rolesOnlyApp: [...MODEL_PANEL_EXTRA, ...PROVENANCE_APP], rolesOnlyProto: [...PROVENANCE_PROTO] },
   integrity: {
     // the HTML document's 36 px row thumbnail is its text card (title, first lines of the page) where the prototype
     // shows a document icon (web-1 AssetThumb); the card no longer shows the page source (plugins/doc excerpt)
@@ -236,8 +246,8 @@ const KNOWN: Record<string, Known> = {
   settings: { onlyApp: ['关键词搜索', 'community.spine · 未安装'], onlyProto: ['Lore 版本存储', 'Spine 动画 · 未安装'], rolesOnlyApp: [...NAMED_ROLES], rolesOnlyProto: [...NAMED_ROLES] },
   // the prototype's tag page has its own made-up set (with typos to merge: 宝相, 道具s)
   tags: { onlyApp: ['材质', '场景', '地图', '动画', '动图', '规范', '界面', '特效', '提灯', '武器', '效果图', '序列帧', '岩石', '音乐', '原型稿', 'HDRI', '商人', '暖光'], onlyProto: ['宝相', '道具s', '金属', '发光'] },
-  'context-menu': { onlyApp: [...DATA, ...RENDERING, ...F_MODEL_TECH], onlyProto: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER], rolesOnlyApp: [...NAMED_ROLES, ...ICON_ONLY_FOOTER], rolesOnlyProto: [...NAMED_ROLES, ...INSPECTOR_REL_ROWS, ...ICON_ONLY_FOOTER] },
-  'delete-confirm': { onlyApp: [...DATA, ...RENDERING, ...F_MODEL_TECH], onlyProto: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER], rolesOnlyApp: [/^alertdialog "把 chest\.glb 移入回收站？"$/, /^treeitem "chest_icon\.png /], rolesOnlyProto: [...BEHIND_MODAL] }
+  'context-menu': { onlyApp: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...PROVENANCE_APP], onlyProto: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER, ...PROVENANCE_PROTO], rolesOnlyApp: [...NAMED_ROLES, ...ICON_ONLY_FOOTER], rolesOnlyProto: [...NAMED_ROLES, ...INSPECTOR_REL_ROWS, ...ICON_ONLY_FOOTER] },
+  'delete-confirm': { onlyApp: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...PROVENANCE_APP], onlyProto: [...DATA, ...RENDERING, ...F_MODEL_TECH, ...ICON_ONLY_FOOTER, ...PROVENANCE_PROTO], rolesOnlyApp: [/^alertdialog "把 chest\.glb 移入回收站？"$/, /^treeitem "chest_icon\.png /], rolesOnlyProto: [...BEHIND_MODAL] }
 }
 
 /* ───────────── report ───────────── */

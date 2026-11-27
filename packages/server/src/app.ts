@@ -14,8 +14,8 @@ import {
   AssetPatch, BatchRequest, BundleRequest, CacheCleanRequest, ConfigPatchRequest, ContentReplaceFields, CopyRequest,
   CreateRunRequest, ExportRequest, FolderCreateRequest, FolderDeleteRequest, FolderPatchRequest, IssueBatchResolveRequest,
   IssueResolveRequest, IssuesQuery, JobsRetryRequest, LibraryAddRequest, LibraryPatchRequest, LibraryTagRequest,
-  LineageQuery, MoveRequest, PluginInstallRequest, PluginSettingsPut, PluginToggleRequest, PrecheckRequest, RecordInput,
-  RecordNoteRequest, RegisterFields, RelationAckRequest, RelationInput, RelationRef, RelationReplaceRequest,
+  LineageQuery, MoveRequest, PluginInstallRequest, PluginSettingsPut, PluginToggleRequest, PrecheckRequest, ApplyRequest,
+  RegisterFields, RelationAckRequest, RelationInput, RelationRef, RelationReplaceRequest,
   RenderResultFields, RescanRequest, RetargetRequest, ReviewRequest, SearchRequest, TagNamesRequest, TagsPatchRequest,
   TrashRestoreRequest, ViewPutRequest, ActionRunRequest,
   type EndpointName, type LibraryInfo, type MachineConfig, type PluginInfo, type ScanProgress
@@ -430,6 +430,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return (await lib(request)).patch(guidParam(request), req, ctx)
   })
   on('remove', async (request, _r, ctx) => (await lib(request)).trash(guidParam(request), { force: flag(q(request).force) }, ctx))
+  on('apply', async (request, _r, ctx) => (await lib(request)).apply(parse(ApplyRequest, body(request)), ctx))
+  on('untrack', async (request, _r, ctx) => (await lib(request)).untrack(guidParam(request), ctx))
   on('content', async (request, _r, ctx) => {
     const id = guidParam(request)
     const svc = await lib(request)
@@ -551,17 +553,6 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   on('retarget', async (request, _r, ctx) => {
     const req = parse(RetargetRequest, body(request))
     return (await lib(request)).retarget(req, ctx)
-  })
-  on('recordCreate', async (request, reply, ctx) => {
-    const req = parse(RecordInput, body(request))
-    const record = await (await lib(request)).createRecord(req, ctx)
-    reply.code(201)
-    return { id: record.id, record }
-  })
-  on('record', async request => (await lib(request)).record(param(request, 'id')))
-  on('recordNote', async (request, _r, ctx) => {
-    const req = parse(RecordNoteRequest, body(request))
-    return (await lib(request)).addRecordNote(param(request, 'id'), req.text, ctx)
   })
 
   /* ───────────── folders, tags, views ───────────── */

@@ -2,7 +2,7 @@
  * Video viewer (builtin-plugins.md「视频 · 查看器」, prototype viewers.js `videoViewer`): play / pause, loop, speed,
  * volume, frame stepping with frame number and timecode, in / out loop, a timeline with a thumbnail strip, and
  * the「更多」menu: set the current frame as the thumbnail, or save it as an image asset (with a source relation
- * to the video and a `render` production record).
+ * to the video, role 视频, and a `render` provenance).
  */
 import * as React from 'react'
 import { ChevronLeft, ChevronRight, Download, Ellipsis, Image as ImageIcon, Pause, Play, RefreshCw, TriangleAlert, Volume2 } from 'lucide-react'
@@ -117,8 +117,8 @@ export function VideoViewer({ asset, source, mode = 'detail' }: ViewerProps) {
         name,
         stage: asset.stage,
         tags: asset.tags,
-        relations: [{ type: 'source', to: asset.id }, ...belongs],
-        record: { method: 'render', tool: 'Bowerbird 视频查看器', params: { frame, time: Math.round(t * 1000) / 1000, width: c.width, height: c.height }, inputs: [{ id: asset.id, role: '视频' }] },
+        relations: [{ type: 'source', to: asset.id, role: '视频' }, ...belongs],
+        provenance: { method: 'render', tool: 'Bowerbird 视频查看器', params: { frame, time: Math.round(t * 1000) / 1000, width: c.width, height: c.height } },
         onConflict: 'keep-both'
       }, await toBlob(c, 'image/png'))
       const saved = res.asset

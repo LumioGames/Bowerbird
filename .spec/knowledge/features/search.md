@@ -36,8 +36,10 @@ metadata:
     "tech":   { "triangles": { "lte": 5000 }, "width": { "gte": 512 } },
     "relation": { "type": "belongs", "to": "<GUID>" },
     "modified": { "after": "2026-11-01T00:00:00Z" },
-    "by": "agent",                       // 执行者
+    "by": "agent",                       // 创建者
+    "modifiedBy": "agent:me",            // 最后修改者
     "method": ["ai-generate"],           // 生产方式
+    "batch": "bat_0192…",                // 同一批产出
     "includeAuxiliary": false,
     "humanTagsOnly": false
   },
@@ -86,7 +88,9 @@ metadata:
 | `relation` | 关系类型与对方 GUID，可加方向 | 例如归属于某个设计对象的全部资产 |
 | `created` / `modified` | `after`、`before` | |
 | `by` | 执行者 | 资产的创建者。可以只写类别：`agent` 匹配所有 Agent，`agent:modeler` 只匹配这一个 |
-| `method` | 生产方式的数组 | 产出该资产的生产记录的方式，例如 `ai-generate`；插件自定义的值带插件标识前缀 |
+| `modifiedBy` | 执行者 | 最后修改资产信息的人或 Agent，匹配规则与 `by` 相同；没有元数据文件的资产不出现（ADR-072） |
+| `method` | 生产方式的数组 | 资产出处里的方式，例如 `ai-generate`；插件自定义的值带插件标识前缀 |
+| `batch` | 批次号 | 出处里带这个批次号的资产，即同一次产出的一批（ADR-070、ADR-074） |
 | `includeAuxiliary` | 布尔，默认 `false` | 是否包含附属文件 |
 | `humanTagsOnly` | 布尔，默认 `false` | 标签条件是否只匹配人工标签 |
 | `inTrash` | 布尔，默认 `false` | |
@@ -117,8 +121,10 @@ stage:runtime format:model tag:宝箱 -tag:废弃 tris:<5000 folder:props/ 宝�
 | `belongs:<GUID 或名称>` | 归属于某个设计对象 |
 | `when:today` / `when:week` / `when:month` | 修改时间在最近 24 小时、7 天、30 天之内 |
 | `created:today` / `created:week` / `created:month` | 创建时间在最近 24 小时、7 天、30 天之内（ADR-034） |
-| `by:<执行者>` | 按执行者筛选，如 `by:agent`、`by:agent:modeler` |
+| `by:<执行者>` | 按创建者筛选，如 `by:agent`、`by:agent:modeler` |
+| `editor:<执行者>` | 按最后修改者筛选，如 `editor:agent:me`；与 `when:` 合用回答「我这次改了什么」（ADR-072） |
 | `method:<值>` | 按生产方式筛选，如 `method:ai-generate` |
+| `batch:<批次号>` | 同一批产出 |
 | 其余文字 | 作为查询词 |
 
 `when:` 与 `created:` 解析成 `modified` 与 `created` 的时间范围；`tris:` 与 `dur:` 解析成对应的技术信息条件。不认识的写法留在查询词里。
@@ -149,7 +155,7 @@ stage:runtime format:model tag:宝箱 -tag:废弃 tris:<5000 folder:props/ 宝�
 | 描述 | 4 |
 | AI 标签与 AI 描述 | 4 |
 | 路径中的文件夹名 | 4 |
-| 生产记录里的提示词 | 4 |
+| 出处里的提示词 | 4 |
 | 文档正文、格式插件提取的文本 | 1；只取前 20 万字 |
 
 - **中文处理**：用 SQLite FTS5 的 trigram 分词，按字符三元组切分建立索引，可以做任意子串匹配，不依赖分词词典。
@@ -192,6 +198,7 @@ stage:runtime format:model tag:宝箱 -tag:废弃 tris:<5000 folder:props/ 宝�
 | `badge` | 角标文本，由格式插件给出，例如「2,480 面」「0:03」「1024×1024」 |
 | `issueLevel`、`issueCount` | 最高的问题级别与问题数 |
 | `size`、`created`、`modified`、`createdBy` | 大小、创建与修改时间、创建者 |
+| `metaPath` | 元数据文件在资产库内的路径；只被看见的文件没有（ADR-072） |
 | `bundle`、`auxiliary` | 是否包式资产、是否附属文件 |
 | `memberCount` | 归属于它的资产数，大于 0 的是设计对象 |
 | `cellText` | 没有图片缩略图的格式（文档）在网格里显示的标题与摘录 |
@@ -235,4 +242,4 @@ stage:runtime format:model tag:宝箱 -tag:废弃 tris:<5000 folder:props/ 宝�
 
 - 搜索插件接口：[`plugin-system.md`](plugin-system.md)。
 - 接口与 Agent 的调用方式：[`api-and-agent.md`](api-and-agent.md)。
-- 决策：ADR-006、ADR-011、ADR-016、ADR-025、ADR-026、ADR-028、ADR-034、ADR-039、ADR-053。
+- 决策：ADR-006、ADR-011、ADR-016、ADR-025、ADR-026、ADR-028、ADR-034、ADR-039、ADR-053、ADR-070、ADR-072、ADR-074。

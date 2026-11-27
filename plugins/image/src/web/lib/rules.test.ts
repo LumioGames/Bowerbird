@@ -8,8 +8,10 @@ const ID_A = '00000000-0000-7000-8000-00000000000a'
 const ID_B = '00000000-0000-7000-8000-00000000000b'
 type A = Parameters<typeof imageCompareModes>[0]
 function img(id: string, w: number, h: number, extra: Partial<A> = {}): A {
-  return { id, format: 'image', tech: { width: w, height: h }, record: null, relations: { outgoing: [], incoming: [] }, ...extra } as A
+  return { id, format: 'image', tech: { width: w, height: h }, provenance: null, relations: { outgoing: [], incoming: [] }, ...extra } as A
 }
+const prov = (o: Partial<NonNullable<A['provenance']>> = {}) => ({ method: 'slice', by: 'agent:slicer', at: '2026-11-20T08:00:00.000Z', ...o }) as A['provenance']
+const from = (id: string) => ({ outgoing: [{ type: 'source', to: id }], incoming: [] }) as unknown as A['relations']
 const modes = (r: ReturnType<typeof imageCompareModes>) => Object.fromEntries((r ?? []).map(m => [m.mode, m]))
 
 describe('imageCompareModes', () => {
@@ -27,32 +29,33 @@ describe('imageCompareModes', () => {
   it('is not for other formats', () => {
     expect(imageCompareModes(img(ID_A, 1, 1), { ...img(ID_B, 1, 1), format: 'model' })).toBeNull()
   })
-  it('crops the source picture to the slice record rect (ADR-036)', () => {
-    const slice = img(ID_A, 120, 60, { record: { method: 'slice', inputs: [{ id: ID_B }], params: { rect: [10, 20, 120, 60] } } as A['record'] })
+  it('crops the source picture to the rect in the slice\'s own provenance (ADR-036, ADR-070)', () => {
+    const slice = img(ID_A, 120, 60, { provenance: prov({ params: { rect: [10, 20, 120, 60] } }), relations: from(ID_B) })
     const mock = img(ID_B, 1280, 720)
     expect(sliceCrop(slice, mock)).toEqual({ crop: 'right', rect: [10, 20, 120, 60] })
     expect(sliceCrop(mock, slice)).toEqual({ crop: 'left', rect: [10, 20, 120, 60] })
     expect(modes(imageCompareModes(slice, mock)).diff!.available).toBe(true)
   })
-  it('reads the rect of this output from a multi-output record', () => {
-    const rect = { [ID_A]: [100, 40, 64, 64], '00000000-0000-7000-8000-0000000000cc': [0, 0, 64, 64] }
-    const slice = img(ID_A, 64, 64, { record: { method: 'slice', inputs: [{ id: ID_B }], params: { rect } } as A['record'] })
-    expect(sliceCrop(slice, img(ID_B, 1280, 720))).toEqual({ crop: 'right', rect: [100, 40, 64, 64] })
-    const other = img(ID_A, 64, 64, { record: { method: 'slice', inputs: [{ id: ID_B }], params: { rect: { x: [1, 2, 3, 4] } } } as A['record'] })
-    expect(sliceCrop(other, img(ID_B, 1280, 720))).toEqual({ crop: null, missingRect: true })
+  it('takes only the [x, y, w, h] form: the old per-output map is not a rect any more', () => {
+    const plugin = img(ID_A, 64, 64, { provenance: prov({ method: 'community.atlas/slice', params: { rect: [100, 40, 64, 64] } }), relations: from(ID_B) })
+    expect(sliceCrop(plugin, img(ID_B, 1280, 720))).toEqual({ crop: 'right', rect: [100, 40, 64, 64] })
+    const map = img(ID_A, 64, 64, { provenance: prov({ params: { rect: { [ID_A]: [100, 40, 64, 64] } } }), relations: from(ID_B) })
+    expect(sliceCrop(map, img(ID_B, 1280, 720))).toEqual({ crop: null, missingRect: true })
   })
   it('only allows side by side when the slice has no rect', () => {
     const slice = img(ID_A, 120, 60, {
-      record: { method: 'slice' } as A['record'],
-      relations: { outgoing: [{ type: 'source', to: ID_B }], incoming: [] } as unknown as A['relations']
+      provenance: prov(),
+      relations: from(ID_B)
     })
     const m = modes(imageCompareModes(slice, img(ID_B, 1280, 720)))
     expect(m.side!.available).toBe(true)
     expect(m.wipe).toEqual({ mode: 'wipe', available: false, reason: REASON_SLICE_NO_RECT })
   })
-  it('treats unrelated slices as ordinary images', () => {
-    const slice = img(ID_A, 100, 100, { record: { method: 'slice', params: { rect: [0, 0, 1, 1] } } as A['record'] })
+  it('treats unrelated slices as ordinary images, and a source that was not sliced as no slice', () => {
+    const slice = img(ID_A, 100, 100, { provenance: prov({ params: { rect: [0, 0, 1, 1] } }) })
     expect(sliceCrop(slice, img(ID_B, 100, 100))).toBeNull()
+    const drawn = img(ID_A, 100, 100, { provenance: prov({ method: 'manual', params: { rect: [0, 0, 1, 1] } }), relations: from(ID_B) })
+    expect(sliceCrop(drawn, img(ID_B, 100, 100))).toBeNull()
   })
 })
 

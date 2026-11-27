@@ -36,7 +36,12 @@ function useForgeData<T>(load: () => Promise<T>, busy: (v: T) => boolean = NEVER
 
 /* ───────────── detail tab「Forge」───────────── */
 
-export function isForgeAsset(asset: AssetDetail): boolean { return !!asset.record?.plugin?.startsWith(PLUGIN_ID + '@') }
+export function isForgeAsset(asset: AssetDetail): boolean { return !!asset.provenance?.plugin?.startsWith(PLUGIN_ID + '@') }
+
+/** The inputs of a run: the asset's source relations with their roles (ADR-070). */
+function inputsOf(asset: AssetDetail): Array<{ id: string; role?: string }> {
+  return asset.relations.outgoing.filter(r => r.type === 'source').map(r => ({ id: r.to, ...(r.role ? { role: r.role } : {}) }))
+}
 
 async function creatorId(shell: ShellApi, creator: string): Promise<string> {
   const { creators } = await shell.api.creators.list(shell.library.id)
@@ -47,15 +52,16 @@ async function creatorId(shell: ShellApi, creator: string): Promise<string> {
 
 export function ForgeTab({ asset }: { asset: AssetDetail }) {
   const shell = useShell()
-  const rec = asset.record
+  const rec = asset.provenance
+  const inputs = React.useMemo(() => inputsOf(asset), [asset])
   const [names, setNames] = React.useState<Record<string, string>>({})
   const [again, setAgain] = React.useState(false)
   React.useEffect(() => {
     let live = true
-    Promise.all((rec?.inputs ?? []).map(i => shell.api.assets.get(shell.library.id, i.id).then(a => [i.id, a.name] as const).catch(() => [i.id, i.id] as const)))
+    Promise.all(inputs.map(i => shell.api.assets.get(shell.library.id, i.id).then(a => [i.id, a.name] as const).catch(() => [i.id, i.id] as const)))
       .then(pairs => { if (live) setNames(Object.fromEntries(pairs)) })
     return () => { live = false }
-  }, [shell, rec])
+  }, [shell, inputs])
   if (!rec) return null
   return (
     <section className="flex max-w-2xl flex-col gap-4 p-6">
@@ -64,7 +70,7 @@ export function ForgeTab({ asset }: { asset: AssetDetail }) {
         <dt className="text-muted-foreground">{tr(shell, 'method')}</dt><dd className="font-mono text-xs">{rec.method}</dd>
         <dt className="text-muted-foreground">{tr(shell, 'started')}</dt><dd><span className="font-mono text-xs">{rec.by}</span> · {when(shell, rec.at)}</dd>
         <dt className="text-muted-foreground">{tr(shell, 'params')}</dt><dd>{paramsLine(rec.params)}</dd>
-        {(rec.inputs ?? []).map(i => (
+        {inputs.map(i => (
           <React.Fragment key={i.id}><dt className="text-muted-foreground">{i.role ?? '—'}</dt><dd className="font-mono text-xs">{names[i.id] ?? i.id}</dd></React.Fragment>
         ))}
       </dl>
@@ -78,7 +84,7 @@ export function ForgeTab({ asset }: { asset: AssetDetail }) {
 /** The same creation way, prefilled with this run's prompt, parameters and inputs (a new seed). */
 function AgainDialog({ asset, onClose }: { asset: AssetDetail; onClose(): void }) {
   const shell = useShell()
-  const rec = asset.record!
+  const rec = asset.provenance!
   const creator = rec.method.split('/')[1] ?? 'image'
   const title = tr(shell, creator === 'model' ? 'creatorModel' : 'creatorImage')
   const [prompt, setPrompt] = React.useState(rec.prompt ?? '')
@@ -90,7 +96,7 @@ function AgainDialog({ asset, onClose }: { asset: AssetDetail; onClose(): void }
       const id = await creatorId(shell, creator)
       await shell.api.creators.run(shell.library.id, id, {
         params: creator === 'image' ? { ...params, prompt } : params,
-        inputs: (rec.inputs ?? []).map(i => ({ role: i.role ?? '', id: i.id })),
+        inputs: inputsOf(asset).map(i => ({ role: i.role ?? '', id: i.id })),
         folder: dirOf(asset.path)
       })
       onClose()

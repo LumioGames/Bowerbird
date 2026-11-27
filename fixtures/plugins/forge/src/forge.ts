@@ -3,13 +3,14 @@
  *
  * Two creation ways (ADR-016): 「AI 生图」 and 「生成模型」. A run reports progress, writes several candidates into
  * this plugin's temp dir (never the library), then stops at「{方式}完成，挑出要留下的」with a follow-up action that
- * opens the plugin page `pick` (ADR-042). `POST pick` registers the chosen ones through `job.register`; all outputs of
- * one run share one production record (method `community.forge/<creator>`, params with model / seed / negativePrompt,
- * inputs with their role). What is not picked stays in the temp dir.
+ * opens the plugin page `pick` (ADR-042). `POST pick` registers the chosen ones through `job.register`; every output
+ * carries the run's provenance (method `community.forge/<creator>`, params with model / seed / negativePrompt; the
+ * kernel adds the run's batch id, ADR-070) and a source relation to each input with its role. What is not picked
+ * stays in the temp dir.
  *
  * One action on a selection (plugin-system.md「动作」, right-click menu): 「生成变体（Forge）」on a single image makes a
- * recoloured copy next to it, registered with a source relation to the original and a production record
- * `community.forge/variant` (input role「原图」). Its form has one parameter, how far the hue turns.
+ * recoloured copy next to it, registered with a source relation to the original (role「原图」) and the provenance
+ * `community.forge/variant`. Its form has one parameter, how far the hue turns.
  *
  * The AI is fake and local. The machine-only setting `simulate` reproduces the two trouble states of the prototype:
  * `missing-tool` (「缺少外部工具 forge-cli」) and `unavailable` (「服务没有响应（503）」).
@@ -175,18 +176,17 @@ export function createForge(ctx: PluginContext, opts: ForgeOptions = {}) {
     return out
   }
 
-  /** Register the chosen candidates through the kernel: one production record for the whole run. */
+  /** Register the chosen candidates through the kernel: each with the run's provenance (one batch, ADR-070). */
   async function keep(run: ForgeRun, job: JobContext, picked: number[]): Promise<ForgeRun['registered']> {
     const seedBase = int(run.params.seed, 0)
     const params: Record<string, unknown> = run.creator === 'image'
       ? { model: run.params.model, seed: seedBase, ...(str(run.params.negativePrompt) ? { negativePrompt: run.params.negativePrompt } : {}), size: run.params.size, count: run.params.count }
       : { model: run.params.model, seed: seedBase, maxTriangles: run.params.maxTriangles, textureSize: run.params.textureSize, count: run.params.count }
-    const record = {
+    const provenance = {
       method: `${PLUGIN_ID}/${run.creator}`,
       tool: `${PLUGIN_NAME} ${ctx.pluginVersion}`,
       ...(run.creator === 'image' ? { prompt: str(run.params.prompt) } : {}),
-      params,
-      inputs: run.inputs.map(i => ({ id: i.id, role: i.role }))
+      params
     }
     const stamp = String(now()).slice(-4)
     const model = run.inputs.find(i => i.role === '四视图')
@@ -203,10 +203,9 @@ export function createForge(ctx: PluginContext, opts: ForgeOptions = {}) {
         name,
         folder: run.folder,
         stage: 'production',
-        relations: run.inputs.map(x => ({ type: 'source', to: x.id })),
+        relations: run.inputs.map(x => ({ type: 'source', to: x.id, role: x.role })),
         onConflict: 'keep-both',
-        // the first output carries the record; the kernel attaches the same record to the rest of the run
-        ...(n === 0 ? { record } : {})
+        provenance
       }
       const info = await job.register(req)
       out.push({ id: info.id, name: info.name, path: info.path })
@@ -369,9 +368,9 @@ export function createForge(ctx: PluginContext, opts: ForgeOptions = {}) {
           name,
           folder: dirOf(src.path),
           stage: src.stage,
-          relations: [{ type: 'source', to: src.id }],
+          relations: [{ type: 'source', to: src.id, role: '原图' }],
           onConflict: 'keep-both',
-          record: { method: `${PLUGIN_ID}/variant`, tool: `${PLUGIN_NAME} ${ctx.pluginVersion}`, params: { hue }, inputs: [{ id: src.id, role: '原图' }] }
+          provenance: { method: `${PLUGIN_ID}/variant`, tool: `${PLUGIN_NAME} ${ctx.pluginVersion}`, params: { hue } }
         }],
         message: `已生成 ${name}`
       }

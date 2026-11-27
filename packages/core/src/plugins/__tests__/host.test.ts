@@ -255,7 +255,7 @@ describe('PluginHost activation for a library', () => {
     // Routes are listed with their plugin; kernel-reserved paths are refused.
     expect(lp.routes().map(r => [r.pluginId, r.route.path])).toEqual([['bowerbird.ctx', 'tile/:x']])
     expect(lp.creatorInfo()).toEqual([{ id: 'bowerbird.ctx:gen', pluginId: 'bowerbird.ctx', pluginName: 'bowerbird.ctx', displayName: '生成', params: { type: 'object' }, inputs: [{ role: 'reference', formats: ['image'], required: false }] }])
-    expect(lp.relationTypes().map(r => [r.id, r.plugin])).toEqual([['source', null], ['uses', null], ['belongs', null], ['variant', 'bowerbird.ctx']])
+    expect(lp.relationTypes().map(r => [r.id, r.plugin])).toEqual([['source', null], ['reference', null], ['uses', null], ['belongs', null], ['variant', 'bowerbird.ctx']])
     // Machine settings: only machine-scoped keys.
     expect(h.machineSettings('bowerbird.ctx')).toEqual({ ratio: 3 })
     await expect(h.setMachineSettings('bowerbird.ctx', { env: 'x' })).rejects.toMatchObject({ code: 'validation_failed' })

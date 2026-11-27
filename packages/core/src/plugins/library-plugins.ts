@@ -59,6 +59,7 @@ const nativeImport = (specifier: string): Promise<Record<string, unknown>> => im
 
 export const BUILTIN_RELATION_TYPES: Array<RelationTypeContribution & { plugin: string | null }> = [
   { id: 'source', name: '来源', inverseName: '产出', tracksVersion: true, plugin: null },
+  { id: 'reference', name: '参考', inverseName: '被参考', tracksVersion: false, plugin: null },
   { id: 'uses', name: '引用', inverseName: '被引用', tracksVersion: false, plugin: null },
   { id: 'belongs', name: '归属', inverseName: '成员', tracksVersion: false, plugin: null }
 ]

@@ -69,7 +69,7 @@ describe('community.forge', () => {
     )
   })
 
-  it('AI 生图: progress, candidates in the temp dir, waits for「挑选…」, registers the picked ones with one shared record', async () => {
+  it('AI 生图: progress, candidates in the temp dir, waits for「挑选…」, registers the picked ones, each with the run\'s provenance', async () => {
     const { ctx, forge } = setup()
     const job = fakeJob('job-img')
     const done = forge.imageCreator.run(request({ prompt: '提灯的原画', negativePrompt: '文字', count: 4, size: '1024×1024', seed: 7730 }, [{ role: '参考图', asset: TURNAROUND }]), job)
@@ -100,17 +100,16 @@ describe('community.forge', () => {
     await done
     expect(job.registered).toHaveLength(2)
     const [a, b] = job.registered
-    expect(a!.record).toEqual({
+    expect(a!.provenance).toEqual({
       method: 'community.forge/image', tool: 'Forge 0.4.0', prompt: '提灯的原画',
-      params: { model: 'forge-xl 2.1', seed: 7730, negativePrompt: '文字', size: '1024×1024', count: 4 },
-      inputs: [{ id: TURNAROUND.id, role: '参考图' }]
+      params: { model: 'forge-xl 2.1', seed: 7730, negativePrompt: '文字', size: '1024×1024', count: 4 }
     })
-    expect(b!.record).toBeUndefined() // same run, same record
+    expect(b!.provenance).toEqual(a!.provenance) // same run: the kernel adds one batch id to both
     expect(a!.file).toEqual({ kind: 'path', path: run.candidates[0]!.file, name: a!.name })
     expect(b!.file).toMatchObject({ path: run.candidates[2]!.file })
     expect([a!.name, b!.name]).toEqual(['forge_1234_1.png', 'forge_1234_2.png'])
     expect(a!.folder).toBe('props/chest')
-    expect(a!.relations).toEqual([{ type: 'source', to: TURNAROUND.id }])
+    expect(a!.relations).toEqual([{ type: 'source', to: TURNAROUND.id, role: '参考图' }])
     expect(a!.onConflict).toBe('keep-both')
     expect(run.state).toBe('done')
     expect(job.calls[job.calls.length - 1]!.message).toBe('已登记 2 个')
@@ -120,7 +119,7 @@ describe('community.forge', () => {
     expect((await forge.routes.pick({ body: { job: 'job-img', keep: [1] } } as never)).status).toBe(409)
   })
 
-  it('生成模型: needs a 四视图, writes GLB candidates, the record carries the inputs with their roles', async () => {
+  it('生成模型: needs a 四视图, writes GLB candidates, the inputs are source relations with their roles', async () => {
     const { forge } = setup()
     await expect(forge.modelCreator.run(request({}), fakeJob('no-input'))).rejects.toThrow('先选一个四视图')
 
@@ -141,11 +140,11 @@ describe('community.forge', () => {
     expect(job.registered).toHaveLength(1)
     const r = job.registered[0]!
     expect(r.name).toBe('chest_forge.glb')
-    expect(r.record).toMatchObject({
-      method: 'community.forge/model', params: { model: 'forge-3d 0.9', seed: 5, maxTriangles: 5000, textureSize: 1024, count: 2 },
-      inputs: [{ id: TURNAROUND.id, role: '四视图' }, { id: DESIGN.id, role: '设计对象' }]
+    expect(r.provenance).toMatchObject({
+      method: 'community.forge/model', params: { model: 'forge-3d 0.9', seed: 5, maxTriangles: 5000, textureSize: 1024, count: 2 }
     })
-    expect(r.record && typeof r.record === 'object' && 'prompt' in r.record).toBe(false)
+    expect(r.relations).toEqual([{ type: 'source', to: TURNAROUND.id, role: '四视图' }, { type: 'source', to: DESIGN.id, role: '设计对象' }])
+    expect(r.provenance && 'prompt' in r.provenance).toBe(false)
   })
 
   it('one candidate is registered without asking', async () => {
@@ -155,10 +154,10 @@ describe('community.forge', () => {
     expect(job.calls.some(isPick)).toBe(false)
     expect(job.registered).toHaveLength(1)
     expect(job.registered[0]!.folder).toBe('ai-generated')
-    expect((job.registered[0]!.record as { params: { seed: number } }).params.seed).toEqual(expect.any(Number))
+    expect((job.registered[0]!.provenance as { params: { seed: number } }).params.seed).toEqual(expect.any(Number))
   })
 
-  it('cancel while generating or while waiting to pick: nothing is registered, no record is written', async () => {
+  it('cancel while generating or while waiting to pick: nothing is registered', async () => {
     const { ctx } = setup()
     const forge = activateForge(ctx, { stepMs: 5 })
     const running = fakeJob('job-cancel-1')
@@ -256,15 +255,15 @@ describe('community.forge action「生成变体（Forge）」(plugin-system.md�
     expect(a.appliesTo([])).toBe(false)
   })
 
-  it('makes a recoloured copy next to the original: source relation, record community.forge/variant with input role 原图', async () => {
+  it('makes a recoloured copy next to the original: source relation with role 原图, provenance community.forge/variant', async () => {
     const { forge, file } = await withImage()
     const r = await forge.variantAction.run([IMG], { hue: 90 }, actx())
     expect(r.assets).toHaveLength(1)
     const out = r.assets![0]!
     expect(out).toMatchObject({
       name: 'chest_basecolor_variant.png', folder: 'props/chest', stage: 'production', onConflict: 'keep-both',
-      relations: [{ type: 'source', to: IMG.id }],
-      record: { method: 'community.forge/variant', tool: 'Forge 0.4.0', params: { hue: 90 }, inputs: [{ id: IMG.id, role: '原图' }] }
+      relations: [{ type: 'source', to: IMG.id, role: '原图' }],
+      provenance: { method: 'community.forge/variant', tool: 'Forge 0.4.0', params: { hue: 90 } }
     })
     expect(out.file.kind).toBe('path')
     const made = (out.file as { path: string }).path
@@ -278,7 +277,7 @@ describe('community.forge action「生成变体（Forge）」(plugin-system.md�
   it('defaults the hue to 180; refuses a selection it does not apply to or a file that is gone', async () => {
     const { forge } = await withImage()
     const r = await forge.variantAction.run([IMG], undefined, actx())
-    expect(r.assets![0]!.record).toMatchObject({ params: { hue: 180 } })
+    expect(r.assets![0]!.provenance).toMatchObject({ params: { hue: 180 } })
     await expect(forge.variantAction.run([IMG, IMG], {}, actx())).rejects.toThrow('只能对一张图片生成变体')
     const gone = { ...IMG, id: '0192f3a4-7c1e-7b52-9d06-4e8a51c0d299' } as AssetInfo
     await expect(forge.variantAction.run([gone], {}, actx())).rejects.toThrow('找不到')

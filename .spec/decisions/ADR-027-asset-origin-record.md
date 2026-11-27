@@ -1,6 +1,6 @@
 # ADR-027：资产记下产出它的生产记录（origin）
 
-状态：提议
+状态：Superseded（被 [ADR-070](ADR-070-provenance-lives-in-bmeta.md) 取代）
 日期：2026-11-25
 
 ## 背景

@@ -85,7 +85,7 @@ export function IssuesPage() {
         if (i.assetId && i.relation) navigate(relinkPath(lib, i.assetId, i.relation), { state: { from: location.pathname + location.search, fromLabel: t('iss.title'), trail: [] } })
         return
       case 'remove-relation': {
-        const ok = await confirm({ title: t('iss.unlink.title'), body: t('iss.unlink.text', { name, verb: t(`w2.rel.type.${i.relation?.type === 'source' || i.relation?.type === 'belongs' ? i.relation.type : 'uses'}`), other }), confirmLabel: t('iss.unlink.confirm'), danger: true })
+        const ok = await confirm({ title: t('iss.unlink.title'), body: t('iss.unlink.text', { name, verb: t(`w2.rel.type.${i.relation?.type === 'source' || i.relation?.type === 'reference' || i.relation?.type === 'belongs' ? i.relation.type : 'uses'}`), other }), confirmLabel: t('iss.unlink.confirm'), danger: true })
         if (ok) await resolve(i, 'remove-relation', undefined, t('rel.removed'))
         return
       }

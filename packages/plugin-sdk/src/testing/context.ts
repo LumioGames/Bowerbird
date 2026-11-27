@@ -68,7 +68,7 @@ export function createTestContext(opts: TestContextOptions = {}): TestContext {
   const notImplemented = async () => { throw new Error('not available in the test context') }
   const library: LibraryReader = {
     id: 'test', name: 'test', root: os.tmpdir(),
-    get: async () => null, getByPath: async () => null, search: notImplemented, record: async () => null,
+    get: async () => null, getByPath: async () => null, search: notImplemented,
     filePath: async () => null, issues: async () => [],
     ...(opts.library ?? {})
   } as LibraryReader

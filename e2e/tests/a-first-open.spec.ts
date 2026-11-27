@@ -37,7 +37,7 @@ function sidecars(root: string): number {
 let bb: Bowerbird | undefined
 test.afterEach(async () => { await bb?.stop(); bb = undefined })
 
-test('说明、缺插件的格式、开始后登记完成并提示需要的插件；网格直接出现登记的资产', async ({ page }) => {
+test('说明、缺插件的格式、开始后读取完成并提示需要的插件；网格直接出现这些资产；文件旁边不写 .bmeta（ADR-067）', async ({ page }) => {
   bb = await startBowerbird({ library: 'first-open' })
   backdate(bb.root)
   expect(sidecars(bb.root)).toBe(0)
@@ -47,22 +47,23 @@ test('说明、缺插件的格式、开始后登记完成并提示需要的插�
   await expect(d).toBeVisible()
   await expect(d).toContainText('71')
   await expect(d).toContainText(`个文件 · ${folders(bb.root)} 个文件夹`)
-  await expect(d.getByText('每个文件旁边会多一个同名的 .bmeta，记下编号、标签和关系。原文件不改动。')).toBeVisible()
+  await expect(d.getByText('文件只被读取，原文件不改动。给文件记下标签、关系或出处后，它旁边才会多一个同名的 .bmeta。')).toBeVisible()
   await expect(d.getByRole('heading', { name: '还没有插件能读的格式' })).toBeVisible()
   const exts = d.getByRole('listitem')
   for (const ext of ['.hdr', '.skel', '.obj', '.blend', '.css', '.js']) await expect(exts.filter({ hasText: ext })).toHaveCount(1)
   await expect(exts.filter({ hasText: '.hdr' })).toContainText('2')
-  await expect(d.getByText('这些文件照样登记，装好插件后再生成预览。')).toBeVisible()
+  await expect(d.getByText('这些文件照样收进资产库，装好插件后再生成预览。')).toBeVisible()
   await expect(d.getByRole('button', { name: '取消' })).toBeVisible()
   await d.getByRole('button', { name: '开始' }).click()
   await expect(d).toBeHidden()
 
-  const done = toast(page, '已登记 71 个文件 · 6 种格式需要插件')
+  const done = toast(page, '已读取 71 个文件 · 6 种格式需要插件')
   await expect(done).toBeVisible({ timeout: 30_000 })
-  await expect.poll(() => sidecars(bb!.root)).toBe(71)
-  expect(fs.existsSync(path.join(bb.root, 'props/chest/chest.glb.bmeta'))).toBe(true)
+  // files nobody said anything about live in the index only: nothing is written beside them
+  expect(sidecars(bb.root)).toBe(0)
+  expect(fs.existsSync(path.join(bb.root, 'props/chest/chest.glb.bmeta'))).toBe(false)
 
-  // the registered assets are on screen (own registration: no「有 N 个新资产」pill)
+  // the assets are on screen (own registration: no「有 N 个新资产」pill)
   await expect(grid(page).locator('[data-asset-cell]').first()).toBeVisible({ timeout: 15_000 })
   await expect.poll(async () => (await bb!.api.search(bb!.lib, { limit: 1 } as never)).total).toBe(71)
   await expect(page.getByRole('button', { name: /个新资产 · 显示/ })).toHaveCount(0)
@@ -87,7 +88,7 @@ test('取消：什么都不写，下次打开还会问', async ({ page }) => {
   await expect(page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `打开 ${bb.root}` }) })).toBeVisible()
 })
 
-test('登记进度可以停止：「已停止，登记了 N 个文件；下次打开会接着登记」', async ({ page }) => {
+test('读取进度可以停止：「已停止，读取了 N 个文件；下次打开会接着读取」', async ({ page }) => {
   test.setTimeout(180_000)
   const big = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-e2e-a-big-'))
   try {
@@ -101,13 +102,13 @@ test('登记进度可以停止：「已停止，登记了 N 个文件；下次�
   await expect(d).toContainText('4,000')
   await d.getByRole('button', { name: '开始' }).click()
 
-  const panel = page.locator('div').filter({ has: page.getByText(`正在登记 ${path.basename(bb.root)}`, { exact: true }) }).filter({ has: page.getByRole('button', { name: '停止' }) }).last()
+  const panel = page.locator('div').filter({ has: page.getByText(`正在读取 ${path.basename(bb.root)}`, { exact: true }) }).filter({ has: page.getByRole('button', { name: '停止' }) }).last()
   await expect(panel).toBeVisible()
   await expect(panel).toContainText(/\d[\d,]* \/ [\d,]+/)
   await panel.getByRole('button', { name: '停止' }).click()
-  const stopped = toast(page, /^已停止，登记了 [\d,]+ 个文件；下次打开会接着登记$/)
+  const stopped = toast(page, /^已停止，读取了 [\d,]+ 个文件；下次打开会接着读取$/)
   await expect(stopped).toBeVisible({ timeout: 30_000 })
   await expect(panel).toBeHidden()
-  const n = Number((await stopped.textContent())!.match(/登记了 ([\d,]+) 个/)![1]!.replace(/,/g, ''))
+  const n = Number((await stopped.textContent())!.match(/读取了 ([\d,]+) 个/)![1]!.replace(/,/g, ''))
   expect(n).toBeLessThan(4000)
 })

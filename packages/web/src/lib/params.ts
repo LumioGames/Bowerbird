@@ -1,7 +1,7 @@
 import { t } from './i18n'
 
 /**
- * A production record's parameters in words, the way the prototype writes them (data.js RECS):「缩放 1 · 动画烘焙 30 fps ·
+ * A provenance's parameters in words, the way the prototype writes them (data.js RECS):「缩放 1 · 动画烘焙 30 fps ·
  * 贴图 1024」「seed 4211 · 1536×1536 · 30 步」「通道 完整渲染 · 环境 工作室 · 透视 35° · 256×256」「12 张 · 2× 导出 · 透明裁边」.
  * The keys are open (ProductionRecord.params: a few conventional ones plus whatever a tool writes): a key the
  * dictionaries know gets its phrase (`param.<method>.<key>` when a method means something of its own by it, else

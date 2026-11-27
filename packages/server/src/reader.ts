@@ -36,7 +36,6 @@ export function libraryReader(svc: LibraryService, ctx: CallContext, info: { nam
       return null
     },
     search: q => svc.search(q, ctx),
-    record: async id => (await orNull(svc.record(id)))?.record ?? null,
     filePath: async id => (await orNull(svc.file(id)))?.absPath ?? null,
     issues: async assetId => (await svc.issues(assetId ? { assetId } : {})).issues
   }

@@ -5,7 +5,7 @@
  * summary → enrich → validate → index), one at a time; a stage nobody handles is `skipped`. Formats whose thumbnails
  * are rendered by a browser park the thumbnail and summary jobs in `waiting-renderer` until a page claims them.
  * Failures retry three times with growing delays, then stay `failed` and raise a pipeline-failed issue. Create jobs
- * run a creator plugin; its outputs go through the kernel's registration and share one production record.
+ * run a creator plugin; its outputs go through the kernel's registration and share one batch of provenance (ADR-070).
  */
 import os from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import type Database from 'better-sqlite3'
 import { v7 as uuidv7 } from 'uuid'
 import {
   PIPELINE_STAGES, THUMB_VARIANTS, type AssetSummary, type CacheCleanResponse, type CacheResponse, type CheckView, type Guid,
-  type JobAction, type JobInfo, type JobsResponse, type PipelineStage, type RecordInput, type RenderTask, type StageStats,
+  type JobAction, type JobInfo, type JobsResponse, type PipelineStage, type ProvenanceInput, type RenderTask, type StageStats,
   type ThumbVariant
 } from '@bowerbird/schema'
 import type { Action, AssetFile, AssetInfo, CreateRequest, JobContext, ProbeResult, RegisterRequest } from '@bowerbird/plugin-sdk'
@@ -867,32 +867,28 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
 
   interface CreateParams { params: unknown; inputs: Array<{ role: string; id: Guid }>; folder?: string }
 
-  function defaultRecord(entry: CreatorEntry, req: CreateRequest): RecordInput {
+  /** Provenance a creator run gives its outputs when they say nothing themselves: the creator and its parameters. */
+  function defaultProvenance(entry: CreatorEntry, req: CreateRequest): ProvenanceInput {
     const params = req.params && typeof req.params === 'object' && !Array.isArray(req.params) ? (req.params as Record<string, unknown>) : undefined
-    return {
-      method: `${entry.pluginId}/${entry.creator.id}`,
-      ...(params ? { params } : {}),
-      ...(req.inputs.length ? { inputs: req.inputs.map(i => ({ id: i.asset.id, role: i.role })) } : {})
-    }
+    return { method: `${entry.pluginId}/${entry.creator.id}`, ...(params && Object.keys(params).length ? { params } : {}) }
   }
 
   /**
-   * Registration for one run (create or action): through the kernel's channel; outputs of the run share one production
-   * record — the first output's record is created by the kernel, later outputs get its id (ADR-016).
+   * Registration for one run (create or action): through the kernel's channel; every output of the run carries the
+   * same batch id in its provenance, and the run's inputs as source relations (ADR-070).
    */
   function registrar(jobId: string, owner: { pluginId: string; pluginVersion: string }, actor: string, signal: AbortSignal,
-    firstRecord: (output: RegisterRequest) => RegisterRequest['record'] | undefined): (output: RegisterRequest) => Promise<AssetInfo> {
-    let recordId: string | null = null
+    run: { provenance?: ProvenanceInput; inputs?: Array<{ id: Guid; role: string }> } = {}): (output: RegisterRequest) => Promise<AssetInfo> {
+    const batch = `bat_${uuidv7()}`
     let chain: Promise<unknown> = Promise.resolve()
     return (output: RegisterRequest) => {
-      // Serialized, so the first output creates the shared record before the next one uses it.
+      // serialized: outputs arrive in the order the plugin registered them
       const next = chain.then(async () => {
         if (signal.aborted) throw new CoreError('conflict', '任务已取消')
-        let req: RegisterRequest = output
-        if (recordId) req = { ...output, record: recordId }
-        else { const rec = firstRecord(output); req = rec === undefined ? output : { ...output, record: rec } }
-        const res = await deps.register(req, { actor, pluginId: owner.pluginId, pluginVersion: owner.pluginVersion, ...(recordId ? { recordId } : {}) })
-        recordId ??= res.recordId
+        const res = await deps.register(output, {
+          actor, pluginId: owner.pluginId, pluginVersion: owner.pluginVersion, batch,
+          ...(run.provenance ? { provenance: run.provenance } : {}), ...(run.inputs?.length ? { inputs: run.inputs } : {})
+        })
         const row = getJob(jobId)
         const outs = row ? (JSON.parse(row.outputs_json) as string[]) : []
         outs.push(res.info.id)
@@ -908,12 +904,9 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
   function launchCreate(jobId: string, entry: CreatorEntry, p: CreateParams, inputs: Array<{ role: string; asset: AssetSummary }>, actor: string): void {
     const ctl = new AbortController()
     const request: CreateRequest = { params: p.params, inputs, ...(p.folder !== undefined ? { folder: p.folder } : {}), actor }
-    const register = registrar(jobId, entry, actor, ctl.signal, output => {
-      if (!output.record) return defaultRecord(entry, request)
-      if (typeof output.record === 'object' && !output.record.inputs?.length && inputs.length) {
-        return { ...output.record, inputs: inputs.map(i => ({ id: i.asset.id, role: i.role })) }
-      }
-      return undefined
+    const register = registrar(jobId, entry, actor, ctl.signal, {
+      provenance: defaultProvenance(entry, request),
+      inputs: inputs.map(i => ({ id: i.asset.id, role: i.role }))
     })
     const ctx: JobContext = {
       id: jobId,
@@ -969,7 +962,7 @@ export function createPipelineImpl(opts: PipelineOptions & PipelineExtraOptions)
 
   function launchAction(jobId: string, entry: { pluginId: string; pluginVersion: string; action: Action }, p: ActionParams, selection: AssetSummary[], actor: string): void {
     const ctl = new AbortController()
-    const register = registrar(jobId, entry, actor, ctl.signal, () => undefined)
+    const register = registrar(jobId, entry, actor, ctl.signal, { provenance: { method: `${entry.pluginId}/${entry.action.id}` } })
     const actionLog = opts.log.child(`plugin.${entry.pluginId}`)
     const done = waitForSlot(entry.pluginId, ctl.signal)
       .then(() => plugins.invoke(entry.pluginId, `action:${entry.action.id}`, () => entry.action.run(selection, p.params ?? null, { actor, log: actionLog, signal: ctl.signal })))

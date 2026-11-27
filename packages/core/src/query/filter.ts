@@ -92,16 +92,15 @@ export function buildWhere(f: Filter): Where {
     if (range?.before) add(`${col} < ?`, normalizeTime(range.before))
   }
 
-  if (f.by) {
-    // `agent` matches every agent; `agent:modeler` only that one (schema actorMatches).
-    if (f.by.includes(':')) add('a.created_by = ?', f.by)
-    else add('(a.created_by >= ? AND a.created_by < ?)', f.by + ':', f.by + ';')
+  // `agent` matches every agent; `agent:modeler` only that one (schema actorMatches).
+  for (const [col, who] of [['a.created_by', f.by], ['a.modified_by', f.modifiedBy]] as const) {
+    if (!who) continue
+    if (who.includes(':')) add(`${col} = ?`, who)
+    else add(`(${col} >= ? AND ${col} < ?)`, who + ':', who + ';')
   }
 
-  if (nonEmpty(f.method)) {
-    const m = ph(f.method.length)
-    add(`(a.method IN (${m}) OR a.id IN (SELECT r.from_id FROM relations r JOIN records rec ON rec.id = r.record WHERE r.type = 'source' AND rec.method IN (${m})))`, ...f.method, ...f.method)
-  }
+  if (nonEmpty(f.method)) add(`a.method IN (${ph(f.method.length)})`, ...f.method)
+  if (f.batch) add('a.batch = ?', f.batch)
 
   if (f.ids) {
     if (f.ids.length === 0) add('0')

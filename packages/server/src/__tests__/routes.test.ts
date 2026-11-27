@@ -115,7 +115,7 @@ describe('validation', () => {
   it('uses lineage defaults', async () => {
     const { app, fake } = await setup()
     await app.inject({ method: 'GET', url: `${L}/assets/${ID1}/lineage` })
-    expect(fake.last('lineage')!.args[1]).toEqual({ direction: 'up', types: ['source'], depth: 5 })
+    expect(fake.last('lineage')!.args[1]).toEqual({ direction: 'up', types: ['source', 'reference'], depth: 5 })
   })
   it('parses issue filters', async () => {
     const { app, fake } = await setup()
@@ -411,7 +411,7 @@ describe('uploads', () => {
       }
     })
     const mp = multipartBody([
-      { name: 'meta', value: JSON.stringify({ folder: 'props', tags: ['箱子'], record: { method: 'ai-generate', prompt: '宝箱' } }) },
+      { name: 'meta', value: JSON.stringify({ folder: 'props', tags: ['箱子'], provenance: { method: 'ai-generate', prompt: '宝箱' } }) },
       { name: 'file', value: 'PNGDATA', filename: '宝箱.png', type: 'image/png' }
     ])
     const res = await app.inject({ method: 'POST', url: `${L}/assets`, ...mp })
@@ -421,7 +421,7 @@ describe('uploads', () => {
     expect(seen!.content).toBe('PNGDATA')
     expect(seen!.tmpPath.startsWith(path.join(fake.tmp, 'tmp'))).toBe(true)
     expect(fs.existsSync(seen!.tmpPath)).toBe(false)
-    expect((fake.last('register')!.args[0] as { fields: unknown }).fields).toEqual({ folder: 'props', tags: ['箱子'], record: { method: 'ai-generate', prompt: '宝箱' } })
+    expect((fake.last('register')!.args[0] as { fields: unknown }).fields).toEqual({ folder: 'props', tags: ['箱子'], provenance: { method: 'ai-generate', prompt: '宝箱' } })
   })
   it('upload conflicts answer 409 and leave no temp file', async () => {
     let tmpPath = ''
@@ -982,14 +982,15 @@ describe('other endpoints', () => {
     const { app } = await setup({ svc: { rescan: async () => { throw new CoreError('not_found', '没有这个文件夹') } } })
     expect((await app.inject({ method: 'POST', url: `${L}/rescan`, payload: { path: 'nope' } })).statusCode).toBe(404)
   })
-  it('records, relations, retarget, folders, tags, views, trash, jobs', async () => {
+  it('apply, untrack, relations, retarget, folders, tags, views, trash, jobs', async () => {
     const { app, fake } = await setup()
-    const rec = await app.inject({ method: 'POST', url: `${L}/records`, payload: { method: 'ai-generate', prompt: '红色宝箱' }, headers: { 'x-bowerbird-actor': 'agent:painter' } })
-    expect(rec.statusCode).toBe(201)
-    expect(rec.json()).toMatchObject({ id: 'rec_1', record: { by: 'agent:painter' } })
-    expect((await app.inject({ method: 'GET', url: `${L}/records/rec_1` })).statusCode).toBe(200)
-    expect((await app.inject({ method: 'GET', url: `${L}/records/rec_404` })).statusCode).toBe(404)
-    expect((await app.inject({ method: 'POST', url: `${L}/records/rec_1/notes`, payload: { text: '' } })).statusCode).toBe(400)
+    const ap = await app.inject({ method: 'POST', url: `${L}/assets/apply`, payload: { items: [{ path: 'a.png', tags: { add: ['x'] }, provenance: { method: 'ai-generate', prompt: '红色宝箱' } }], dryRun: true }, headers: { 'x-bowerbird-actor': 'agent:painter' } })
+    expect(ap.statusCode).toBe(200)
+    expect(ap.json()).toMatchObject({ dryRun: true, results: [{ index: 0, path: 'a.png', changed: false }] })
+    expect((fake.last('apply')!.args[1] as { actor: string }).actor).toBe('agent:painter')
+    expect((await app.inject({ method: 'POST', url: `${L}/assets/apply`, payload: { items: [{ path: 'a.png', provenance: { prompt: 'no method' } }] } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: `${L}/records`, payload: { method: 'manual' } })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: `${L}/assets/${ID1}/untrack`, payload: {} })).statusCode).toBe(200)
     expect((await app.inject({ method: 'POST', url: `${L}/assets/${ID1}/relations`, payload: { type: 'uses', to: ID2, slot: 'tex.png' } })).statusCode).toBe(200)
     expect((await app.inject({ method: 'DELETE', url: `${L}/assets/${ID1}/relations`, payload: { type: 'uses', to: ID2 } })).statusCode).toBe(200)
     expect((await app.inject({ method: 'POST', url: `${L}/assets/${ID1}/relations/replace`, payload: { type: 'uses', to: ID2, newTo: ID1 } })).statusCode).toBe(200)

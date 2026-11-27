@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  Bmeta, FolderMeta, LibraryJson, TagsJson, ProductionRecord, TrashInfo, SmartViewFile, FOLDER_META_NAME, SIDECAR_SUFFIX
+  Bmeta, FolderMeta, LibraryJson, TagsJson, TrashInfo, SmartViewFile, FOLDER_META_NAME, SIDECAR_SUFFIX
 } from '@bowerbird/schema'
 import { contentHash, walk } from './lib/util.mjs'
 
@@ -71,15 +71,8 @@ export function verifyLibrary(root) {
   const views = fs.existsSync(viewsDir) ? fs.readdirSync(viewsDir).filter(f => f.endsWith('.json')).sort() : []
   for (const v of views) { const sv = parse(SmartViewFile, path.join(viewsDir, v), '.bowerbird/views/' + v); if (sv && sv.name + '.json' !== v) err('.bowerbird/views/' + v, `name「${sv.name}」does not match the file name`) }
 
-  const records = new Map()
-  const recDir = path.join(root, '.bowerbird/records')
-  if (fs.existsSync(recDir)) for (const rel of walk(recDir)) {
-    const r = parse(ProductionRecord, path.join(recDir, rel), '.bowerbird/records/' + rel)
-    if (!r) continue
-    if (rel !== `${r.at.slice(0, 4)}/${r.id}.json`) err('.bowerbird/records/' + rel, 'must be records/<year>/<id>.json')
-    if (!/^rec_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(r.id)) err('.bowerbird/records/' + rel, 'id is not rec_<uuidv7>')
-    records.set(r.id, r)
-  }
+  // production records live in each asset's provenance (ADR-070): a records folder is from an older library
+  if (fs.existsSync(path.join(root, '.bowerbird/records'))) err('.bowerbird/records', 'production records belong in each asset\'s provenance (ADR-070)')
 
   // sidecars and asset files
   const assets = new Map() // path → bmeta
@@ -142,7 +135,8 @@ export function verifyLibrary(root) {
     if (m.review?.at && m.modified && m.review.at > m.modified.at) err(p, 'review later than modified')
     const judged = v.find(x => x.hash === m.review?.hash)
     if (m.review?.at && judged && m.review.at < judged.at) err(p, 'review older than the content it judged')
-    if (m.origin && !records.has(m.origin)) err(p, `origin ${m.origin} has no record file`)
+    if ('origin' in m) err(p, 'origin is from before ADR-070: the provenance is written in the .bmeta')
+    if (m.provenance && (!m.provenance.by || !m.provenance.at)) err(p, 'provenance without by / at')
   }
 
   // relations
@@ -154,18 +148,16 @@ export function verifyLibrary(root) {
         issue('broken-reference', p, `${r.type}${r.slot ? ' · ' + r.slot : ''} → ${r.to}${trash.has(r.to) ? `（在回收站：${trash.get(r.to).name}）` : ''}`)
         continue
       }
+      if ('record' in r) err(p, `${r.type} relation carries a record id (before ADR-070)`)
       if (r.type === 'source') {
         if (!r.toHash) err(p, 'source relation without toHash')
         else if (r.toHash !== currentHashById(r.to)) issue('stale-upstream', p, `来源 ${toPath} 已更新`)
-        if (r.record && !records.has(r.record)) err(p, `record ${r.record} has no file`)
-      } else if (r.toHash || r.record) err(p, `${r.type} relation carries toHash/record`)
+        const known = (assets.get(toPath).versions ?? []).some(v => v.hash === r.toHash)
+        if (r.toHash && !known) err(p, `source toHash of ${toPath} is none of its versions`)
+      } else if (r.type === 'reference') {
+        if (r.toHash && !(assets.get(toPath).versions ?? []).some(v => v.hash === r.toHash)) err(p, `reference toHash of ${toPath} is none of its versions`)
+      } else if (r.toHash || r.role) err(p, `${r.type} relation carries toHash/role`)
     }
-  }
-  for (const [id, r] of records) for (const inp of r.inputs ?? []) {
-    const ip = byId.get(inp.id)
-    if (!ip) { err('record ' + id, `input ${inp.id} is not in the library`); continue }
-    const known = (assets.get(ip).versions ?? []).some(v => v.hash === inp.hash)
-    if (!known) err('record ' + id, `input hash of ${ip} is none of its versions`)
   }
 
   // content duplicates among live assets (by different GUID or same)
@@ -200,12 +192,12 @@ export function verifyLibrary(root) {
 
   let bytes = 0
   for (const rel of all) bytes += fs.statSync(path.join(root, rel)).size
-  return { root, errors, issues, notes, stats: { assets: assets.size, records: records.size, trash: trash.size, views: views.length, files: all.length, bytes } }
+  return { root, errors, issues, notes, stats: { assets: assets.size, provenance: [...assets.values()].filter(m => m.provenance).length, trash: trash.size, views: views.length, files: all.length, bytes } }
 }
 
 export function printReport(r) {
   const mb = (r.stats.bytes / 1048576).toFixed(1)
-  console.log(`\n${r.root}\n  ${r.stats.assets} assets · ${r.stats.records} records · ${r.stats.trash} in trash · ${r.stats.views} smart folders · ${r.stats.files} files · ${mb} MB`)
+  console.log(`\n${r.root}\n  ${r.stats.assets} assets · ${r.stats.provenance} with provenance · ${r.stats.trash} in trash · ${r.stats.views} smart folders · ${r.stats.files} files · ${mb} MB`)
   console.log('  problems (问题清单):')
   for (const i of r.issues) console.log(`    ${i.expected ? '✓' : '✗'} ${i.type.padEnd(18)} ${i.path} — ${i.detail}`)
   for (const n of r.notes) console.log('    · ' + n)

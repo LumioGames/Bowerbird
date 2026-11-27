@@ -1,11 +1,9 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
-import { useQueries, useQueryClient } from '@tanstack/react-query'
-import type { AssetDetail, AssetSummary, ProductionRecord } from '@bowerbird/schema'
+import { useQueryClient } from '@tanstack/react-query'
+import type { AssetDetail, AssetSummary, Provenance } from '@bowerbird/schema'
 import { cn } from '@bowerbird/plugin-sdk/web'
-import { api } from '../lib/api'
 import { t } from '../lib/i18n'
-import { qk } from '../lib/keys'
 import { Icon } from '../components/Icon'
 import { AssetThumb } from '../components/AssetThumb'
 import { IssueMark, ReviewMark, StageMark } from '../components/marks'
@@ -18,13 +16,13 @@ import { overlayOpen, typing } from '../pages/shared/bridge'
 import { useLineage } from '../pages/shared/queries'
 import { comparePath } from '../detail/banners'
 import { buildGraph, cyclePath, methodLabel, readingOrder, type GEdge, type GNode, type Graph, type GraphOpts, type RelRef } from './build'
-import { EdgePanel, RecordBody } from './panels'
+import { EdgePanel, ProvenanceBody } from './panels'
 import { addRelation } from './actions'
 import { openRelationDialog } from './RelationDialog'
 import { linkMenu, type PointAt } from './link-menu'
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
-type Panel = { edge: string } | { rec: ProductionRecord } | null
+type Panel = { edge: string } | { rec: Provenance; of: string } | null
 interface View { z: number; tx: number; ty: number }
 interface LinkDrag { from: GNode; x: number; y: number; over: string | null }
 
@@ -33,33 +31,21 @@ export interface FocusRel { type: string; to: string; slot?: string }
 
 /**
  * 关系页签 (pages.md 关系页签, components.md 关系图): pan / zoom canvas, hover highlights, edges by type, slot names,
- * missing placeholders, stale warnings, groups, record and relation panels, drag a link between nodes, select two to
+ * missing placeholders, stale warnings, groups, provenance and relation panels, drag a link between nodes, select two to
  * compare, space quick look, version timeline only with a version plugin (ADR-024).
  */
 export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: string; asset: AssetDetail; onOpenAsset(id: string): void; focusRel?: FocusRel | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [opts, setOpts] = React.useState<GraphOpts>({ down: 2, open: {} })
-  const up = useLineage(lib, asset.id, { direction: 'up', types: ['source'], depth: 50 })
-  const down = useLineage(lib, asset.id, { direction: 'down', types: ['source'], depth: opts.down + 1 })
-
-  /* origin records of the top of the chain (records with no input assets, ADR-027) */
-  const roots = React.useMemo(() => {
-    const ns = up.data?.nodes ?? []
-    return ns.filter(n => !(up.data?.edges ?? []).some(e => e.type === 'source' && e.from === n.id)).map(n => n.id).slice(0, 4)
-  }, [up.data])
-  const rootQs = useQueries({ queries: roots.map(id => ({ queryKey: qk.asset(lib, id), queryFn: () => api.assets.get(lib, id) })) })
-  const origins = React.useMemo(() => {
-    const o: Record<string, ProductionRecord> = {}
-    if (asset.origin && asset.record && asset.record.id === asset.origin) o[asset.id] = asset.record
-    for (const q of rootQs) { const d = q.data; if (d?.origin && d.record && d.record.id === d.origin) o[d.id] = d.record }
-    return o
-  }, [asset, rootQs])
+  /* what each asset was made from: source and reference relations (ADR-073); the lineages carry every node's provenance */
+  const up = useLineage(lib, asset.id, { direction: 'up', types: ['source', 'reference'], depth: 50 })
+  const down = useLineage(lib, asset.id, { direction: 'down', types: ['source', 'reference'], depth: opts.down + 1 })
 
   const G: Graph | null = React.useMemo(() => {
     if (!up.data || !down.data) return null
-    return buildGraph({ center: asset, up: up.data, down: down.data, relations: asset.relations, origins }, opts, t)
-  }, [asset, up.data, down.data, origins, opts])
+    return buildGraph({ center: asset, up: up.data, down: down.data, relations: asset.relations, provenance: asset.provenance }, opts, t)
+  }, [asset, up.data, down.data, opts])
 
   const names = React.useMemo(() => {
     const m = new Map<string, string>()
@@ -96,8 +82,8 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
     setAnim(animate); setView({ z, tx, ty })
   }, [G, asset.id, panel])
 
-  /* fit when the graph opens, and again while parts of it are still arriving (the chain's origin record comes after
-     the lineage) — until the person pans or zooms */
+  /* fit when the graph opens, and again while parts of it are still arriving (downstream after upstream) — until the
+     person pans or zooms */
   const userMoved = React.useRef(false)
   React.useLayoutEffect(() => {
     if (!G) return
@@ -204,7 +190,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
   const linkItems = (a: AssetSummary, b: AssetSummary, at: PointAt): MenuEntry[] => linkMenu(a, b, at, {
     wouldCycle: (x, y) => !!cyclePath(sourceEdges, x, y),
     existing,
-    onSource: (x, y) => void openRelationDialog(lib, x, { type: 'source', to: y, existing, sourceEdges, names: Object.fromEntries(names) }),
+    onSource: (x, y, type) => void openRelationDialog(lib, x, { type, to: y, existing, sourceEdges, names: Object.fromEntries(names) }),
     onAdd: (type, x, y) => void addRelation(qc, lib, x, type, y),
     open: m => setMenu(m)
   })
@@ -274,7 +260,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
     const common = { 'data-key': n.key, onPointerEnter: () => setHover(n.key) }
     if (n.kind === 'rec') {
       return (
-        <div key={n.key} {...common} {...keys(n, () => openPanel({ rec: n.rec! }))} aria-label={t('rec.title')} className={cn('w2-gn w2-gn--rec', hl.has(n.key) && 'w2-gn--hl')} style={pos} title={t('rec.title')} onClick={() => openPanel({ rec: n.rec! })}>
+        <div key={n.key} {...common} {...keys(n, () => openPanel({ rec: n.rec!, of: n.recOf! }))} aria-label={t('rec.title')} className={cn('w2-gn w2-gn--rec', hl.has(n.key) && 'w2-gn--hl')} style={pos} title={t('rec.title')} onClick={() => openPanel({ rec: n.rec!, of: n.recOf! })}>
           <Icon name={n.rec!.method === 'ai-generate' ? 'sparkles' : 'activity'} />
           <div><b>{methodLabel(n.rec!.method, t)}</b><small>{n.rec!.by}</small></div>
         </div>
@@ -313,7 +299,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
         <div key={n.key} {...common} className={cn('w2-gn w2-gn--frame', hl.has(n.key) && 'w2-gn--hl')} style={pos}>
           <div className="w2-gn__fhead">
             <Icon name={n.members ? 'layers' : 'activity'} size={12} /><b>{title}</b>
-            {n.rec && <button type="button" className="w2-gn__frec" onClick={() => openPanel({ rec: n.rec! })}>{n.rec.by}</button>}
+            {n.rec && n.recOf && <button type="button" className="w2-gn__frec" onClick={() => openPanel({ rec: n.rec!, of: n.recOf! })}>{n.rec.by}</button>}
             <Btn size="sm" variant="ghost" iconOnly icon="minus" aria-label={t('graph.collapse')} title={t('graph.collapse')} onClick={toggle} />
           </div>
           <div className="w2-gn__grid">
@@ -368,7 +354,8 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
     )
   }
 
-  const edgeMarker = (e: GEdge) => e.type === 'belongs' ? undefined : `url(#${markerId(e.broken ? 'broken' : e.stale ? 'stale' : e.type === 'source' ? 'src' : 'uses')})`
+  const edgeMarker = (e: GEdge) => e.type === 'belongs' ? undefined : `url(#${markerId(e.broken ? 'broken' : e.stale ? 'stale' : e.type === 'source' || e.type === 'reference' ? 'src' : 'uses')})`
+  const edgeClass = (type: string) => (type === 'source' || type === 'reference' || type === 'belongs' ? type : 'uses')
   const linkPath = link ? (() => {
     const a0 = link.from, x1 = a0.x + a0.w / 2, y1 = a0.y, dx = Math.max(30, (link.x - x1) / 2)
     return `M${x1} ${y1} C${x1 + dx} ${y1} ${link.x - dx} ${link.y} ${link.x} ${link.y}`
@@ -394,7 +381,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
             </defs>
             {G.edges.map(e => (
               <g key={e.key} data-edge={e.key} data-on={activeEdge === e.key ? '' : undefined}
-                className={cn('w2-ge', `w2-ge--${e.type === 'source' || e.type === 'belongs' ? e.type : 'uses'}`, e.stale && 'w2-ge--stale', e.broken && 'w2-ge--broken', e.spine && 'w2-ge--spine', (hl.has(e.from) && hl.has(e.to) && (e.from === hover || e.to === hover)) && 'w2-ge--hl')}>
+                className={cn('w2-ge', `w2-ge--${edgeClass(e.type)}`, e.stale && 'w2-ge--stale', e.broken && 'w2-ge--broken', e.spine && 'w2-ge--spine', (hl.has(e.from) && hl.has(e.to) && (e.from === hover || e.to === hover)) && 'w2-ge--hl')}>
                 <path className="w2-ge__hit" d={e.d} onClick={() => openPanel({ edge: e.key })} />
                 <path className="w2-ge__line" d={e.d} markerEnd={edgeMarker(e)} />
               </g>
@@ -412,7 +399,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
               : null)}
         </div>
         <div className="w2-rg__legend w2-floating">
-          {(['source', 'uses', 'belongs', 'stale', 'broken'] as const).map(k => (
+          {(['source', 'reference', 'uses', 'belongs', 'stale', 'broken'] as const).map(k => (
             <span key={k}><svg width="28" height="8"><path d="M0 4H24" className={`w2-lg w2-lg--${k}`} /></svg>{t(`graph.legend.${k}`)}</span>
           ))}
         </div>
@@ -433,7 +420,7 @@ export function RelationGraph({ lib, asset, onOpenAsset, focusRel }: { lib: stri
           <aside className="w2-rg__panel" aria-label={t('graph.panel')}>
             <Btn size="sm" variant="ghost" iconOnly icon="x" className="w2-rg-p__x" aria-label={t('w2.common.close')} onClick={() => setPanel(null)} />
             {'rec' in panel
-              ? <><h5><Icon name={panel.rec.method === 'ai-generate' ? 'sparkles' : 'activity'} />{t('rec.title')}</h5><RecordBody lib={lib} rec={panel.rec} names={names} onOpen={onOpenAsset} /></>
+              ? <><h5><Icon name={panel.rec.method === 'ai-generate' ? 'sparkles' : 'activity'} />{t('rec.title')}</h5><ProvenanceBody lib={lib} rec={panel.rec} of={panel.of} names={names} onOpen={onOpenAsset} /></>
               : (() => { const e = G.edges.find(x => x.key === panel.edge); return e ? <EdgePanel key={e.key} lib={lib} edge={e} names={names} onOpen={onOpenAsset} onClose={() => setPanel(null)} /> : null })()}
           </aside>
         )}

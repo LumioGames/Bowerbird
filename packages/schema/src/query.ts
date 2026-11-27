@@ -54,7 +54,11 @@ export const Filter = z.object({
   modified: TimeRange.optional(),
   /** Creator actor; a bare category (`agent`) matches all of it. */
   by: z.string().optional(),
+  /** Last actor who changed the asset's information (ADR-072); same matching as `by`. Files without a .bmeta never match. */
+  modifiedBy: z.string().optional(),
   method: z.array(z.string()).optional(),
+  /** Outputs of one run: assets whose provenance carries this batch id (ADR-070). */
+  batch: z.string().optional(),
   includeAuxiliary: z.boolean().optional(),
   humanTagsOnly: z.boolean().optional(),
   inTrash: z.boolean().optional(),
@@ -111,8 +115,10 @@ export const SYNTAX_KEYS: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'when', label: '修改时间' },
   { key: 'created', label: '创建时间' },
   { key: 'by', label: '执行者' },
+  { key: 'editor', label: '最后修改者' },
   { key: 'belongs', label: '归属于设计对象' },
-  { key: 'method', label: '生产方式' }
+  { key: 'method', label: '生产方式' },
+  { key: 'batch', label: '同一批产出' }
 ]
 
 /** Short tech keys in the syntax. */
@@ -132,7 +138,7 @@ export interface ParsedQueryText {
   createdWhen?: WhenValue
 }
 
-const KNOWN = new Set(['stage', 'format', 'tag', 'folder', 'review', 'is', 'when', 'created', 'by', 'belongs', 'method'])
+const KNOWN = new Set(['stage', 'format', 'tag', 'folder', 'review', 'is', 'when', 'created', 'by', 'editor', 'belongs', 'method', 'batch'])
 const CMP_RE = /^(<=|>=|<|>|=)?(-?\d+(?:\.\d+)?)$/
 
 /** Split on whitespace, honouring double quotes: `tag:"two words"`. */
@@ -221,6 +227,8 @@ export function parseQueryText(text: string, now: Date = new Date()): ParsedQuer
           break
         }
         case 'by': filter.by = value; break
+        case 'editor': filter.modifiedBy = value; break
+        case 'batch': filter.batch = value; break
         case 'belongs':
           filter.relation = { type: 'belongs', to: value }
           if (!Guid.safeParse(value).success) result.belongsName = value
@@ -269,6 +277,8 @@ export function filterChips(filter: Filter, extras: { when?: WhenValue; createdW
   if (extras.when) out.push({ key: 'when', value: extras.when })
   if (extras.createdWhen) out.push({ key: 'created', value: extras.createdWhen })
   if (filter.by) out.push({ key: 'by', value: filter.by })
+  if (filter.modifiedBy) out.push({ key: 'editor', value: filter.modifiedBy })
+  if (filter.batch) out.push({ key: 'batch', value: filter.batch })
   return out
 }
 

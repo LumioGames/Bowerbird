@@ -1,13 +1,16 @@
 /**
- * @bowerbird/mcp — ten tools over the HTTP API (api-and-agent.md「MCP 工具」); no delete tool. Depends on schema
- * and the official SDK only; never on core. `runMcpServer` serves over stdio (`bb mcp`).
+ * @bowerbird/mcp — the capability table shared by the MCP tools and the `bb` command line (ADR-071), the MCP server
+ * built from it, and how a call connects (ADR-069). Depends on schema and the official SDK only; never on core.
+ * `runMcpServer` serves over stdio (`bb mcp`).
  */
 import type { Readable, Writable } from 'node:stream'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { createMcpServer, type McpOptions } from './tools.js'
 
-export { createMcpServer, createToolContext, agentActor, encodeActorHeader, TOOL_NAMES, type McpOptions, type ToolContext } from './tools.js'
+export { createMcpServer, capContext, agentActor, encodeActorHeader, TOOL_NAMES, type McpOptions } from './tools.js'
+export * from './capabilities.js'
+export * from './connect.js'
 export * from './format.js'
 export * from './resolve.js'
 
